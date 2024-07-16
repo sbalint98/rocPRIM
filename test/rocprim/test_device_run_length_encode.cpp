@@ -26,6 +26,9 @@
 #include <rocprim/device/device_run_length_encode.hpp>
 
 // required test headers
+#include "rocprim/block/block_load.hpp"
+#include "rocprim/block/block_scan.hpp"
+#include "rocprim/device/detail/lookback_scan_state.hpp"
 #include "rocprim/types.hpp"
 #include "test_utils_types.hpp"
 
@@ -35,12 +38,14 @@ template<class Key,
          unsigned int MaxSegmentLength,
          // Tests output iterator with void value_type (OutputIterator concept)
          bool UseIdentityIterator = false,
-         class Config             = rocprim::default_config>
+         class Config             = rocprim::default_config,
+         class NonTrivialConfig   = rocprim::default_config>
 struct params
 {
     using key_type = Key;
     using count_type = Count;
     using config                                        = Config;
+    using non_trivial_config                            = NonTrivialConfig;
     static constexpr unsigned int min_segment_length = MinSegmentLength;
     static constexpr unsigned int max_segment_length = MaxSegmentLength;
     static constexpr bool use_identity_iterator = UseIdentityIterator;
@@ -85,6 +90,7 @@ typedef ::testing::Types<
            200,
            600,
            false,
+           // RLE config
            rocprim::run_length_encode_config<rocprim::reduce_by_key_config<128, 5>,
                                              rocprim::select_config<64, 3>>,
            // RLE non-trivial config
@@ -213,7 +219,7 @@ TYPED_TEST(RocprimDeviceRunLengthEncode, Encode)
             hipGraph_t graph;
             graph = test_utils::createGraphHelper(stream);
 
-            HIP_CHECK(rocprim::run_length_encode(
+            HIP_CHECK(rocprim::run_length_encode<config>(
                 d_temporary_storage,
                 temporary_storage_bytes,
                 d_input,
@@ -290,7 +296,7 @@ TYPED_TEST(RocprimDeviceRunLengthEncode, NonTrivialRuns)
     using key_type = typename TestFixture::params::key_type;
     using count_type = typename TestFixture::params::count_type;
     using offset_type = typename TestFixture::params::count_type;
-    using config      = typename TestFixture::params::config;
+    using config      = typename TestFixture::params::non_trivial_config;
 
     constexpr bool use_identity_iterator = TestFixture::params::use_identity_iterator;
 
@@ -394,6 +400,7 @@ TYPED_TEST(RocprimDeviceRunLengthEncode, NonTrivialRuns)
 
             void * d_temporary_storage;
             HIP_CHECK(test_common_utils::hipMallocHelper(&d_temporary_storage, temporary_storage_bytes));
+            HIP_CHECK(hipDeviceSynchronize());
 
             hipGraph_t graph;
             graph = test_utils::createGraphHelper(stream);
