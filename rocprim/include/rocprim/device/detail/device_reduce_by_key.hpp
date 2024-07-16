@@ -60,36 +60,6 @@ template<typename AccumulatorType, bool UseSleep = false>
 using lookback_scan_state_t
     = detail::lookback_scan_state<wrapped_type_t<AccumulatorType>, UseSleep>;
 
-template<typename EqualityOp>
-struct guarded_inequality_wrapper
-{
-    /// Wrapped equality operator
-    EqualityOp op;
-
-    /// Out-of-bounds limit
-    size_t guard;
-
-    /// Constructor
-    ROCPRIM_HOST_DEVICE inline guarded_inequality_wrapper(EqualityOp op, size_t guard)
-        : op(op), guard(guard)
-    {}
-
-    /// \brief Guarded boolean inequality operator.
-    ///
-    /// \tparam T Type of the operands compared by the equality operator
-    /// \param a Left hand-side operand
-    /// \param b Right hand-side operand
-    /// \param idx Index of the thread calling to this operator. This is used to determine which
-    /// operations are out-of-bounds
-    /// \returns <tt>!op(a, b)</tt> for a certain equality operator \p op when in-bounds.
-    template<typename T>
-    ROCPRIM_HOST_DEVICE inline bool operator()(const T& a, const T& b, size_t idx) const
-    {
-        // In-bounds return operation result, out-of-bounds return false.
-        return (idx < guard) ? !op(a, b) : 0;
-    }
-};
-
 template<typename KeyType,
          typename AccumulatorType,
          unsigned int      BlockSize,
@@ -154,7 +124,8 @@ struct discontinuity_helper
         {
             // If it's the last tile globally, the out-of-bound items should not be flagged.
             auto guarded_not_equal
-                = guarded_inequality_wrapper<CompareFunction>(compare, remaining);
+                = ::rocprim::detail::guarded_inequality_wrapper<CompareFunction>(compare,
+                                                                                 remaining);
 
             if(!is_global_first_tile)
             {

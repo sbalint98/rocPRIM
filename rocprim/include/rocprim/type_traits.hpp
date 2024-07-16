@@ -471,6 +471,38 @@ using void_t = void;
 template<typename Iterator>
 using value_type_t = typename std::iterator_traits<Iterator>::value_type;
 
+template<typename EqualityOp, int Ret = 0>
+struct guarded_inequality_wrapper
+{
+    /// Wrapped equality operator
+    EqualityOp op;
+
+    /// Out-of-bounds limit
+    size_t guard;
+
+    /// Constructor
+    ROCPRIM_HOST_DEVICE inline guarded_inequality_wrapper(EqualityOp op, size_t guard)
+        : op(op), guard(guard)
+    {}
+
+    /// \brief Guarded boolean inequality operator.
+    ///
+    /// \tparam T Type of the operands compared by the equality operator
+    /// \param a Left hand-side operand
+    /// \param b Right hand-side operand
+    /// \param idx Index of the thread calling to this operator. This is used to determine which
+    /// operations are out-of-bounds
+    /// \returns <tt>!op(a, b)</tt> for a certain equality operator \p op when in-bounds.
+    template<typename T>
+    ROCPRIM_HOST_DEVICE
+    inline bool
+        operator()(const T& a, const T& b, size_t idx) const
+    {
+        // In-bounds return operation result, out-of-bounds return ret.
+        return (idx < guard) ? !op(a, b) : Ret;
+    }
+};
+
 } // end namespace detail
 
 /// \brief Behaves like ``std::invoke_result``, but allows the use of invoke_result
