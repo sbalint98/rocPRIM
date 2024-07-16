@@ -59,7 +59,7 @@ template<typename Config,
          typename RunsCountOutputIterator,
          typename LookbackScanState>
 ROCPRIM_KERNEL
-    __launch_bounds__(Config::block_size)
+    __launch_bounds__(device_params<Config>().kernel_config.block_size)
 void non_trivial_kernel(const InputIterator                  input,
                         const OffsetsOutputIterator          offsets_output,
                         const CountsOutputIterator           counts_output,
@@ -100,9 +100,7 @@ hipError_t run_length_encode_non_trivial_runs_impl(void*                   tempo
     using offset_count_pair_type
         = run_length_encode::offset_count_pair_type_t<offset_type, count_type>; // accumulator_type
 
-    using config = detail::default_or_custom_config<
-        Config,
-        reduce_by_key::default_config<ROCPRIM_TARGET_ARCH, input_type, offset_count_pair_type>>;
+    using config = rocprim::detail::wrapped_non_trivial_runs_config<Config, input_type>;
 
     using scan_state_type
         = ::rocprim::detail::lookback_scan_state<offset_count_pair_type, /*UseSleep=*/false>;
@@ -111,9 +109,17 @@ hipError_t run_length_encode_non_trivial_runs_impl(void*                   tempo
 
     using ordered_tile_id_type = detail::ordered_block_id<unsigned int>;
 
-    constexpr unsigned int block_size      = config::block_size;
-    constexpr unsigned int tiles_per_block = config::tiles_per_block;
-    constexpr unsigned int items_per_tile  = block_size * config::items_per_thread;
+    detail::target_arch target_arch;
+    hipError_t          result = host_target_arch(stream, target_arch);
+    if(result != hipSuccess)
+    {
+        return result;
+    }
+    const non_trivial_runs_config_params params = dispatch_target_arch<config>(target_arch);
+
+    const unsigned int block_size      = params.kernel_config.block_size;
+    const unsigned int tiles_per_block = params.tiles_per_block;
+    const unsigned int items_per_tile  = block_size * params.kernel_config.items_per_thread;
 
     // Number of tiles in a single launch (or the only launch if it fits)
     const std::size_t number_of_tiles  = detail::ceiling_div(size, items_per_tile);
@@ -124,7 +130,7 @@ hipError_t run_length_encode_non_trivial_runs_impl(void*                   tempo
     ordered_tile_id_type::id_type* ordered_bid_storage;
 
     detail::temp_storage::layout layout{};
-    hipError_t result = scan_state_type::get_temp_storage_layout(number_of_tiles, stream, layout);
+    result = scan_state_type::get_temp_storage_layout(number_of_tiles, stream, layout);
     if(result != hipSuccess)
     {
         return result;

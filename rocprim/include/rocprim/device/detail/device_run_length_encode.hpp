@@ -170,25 +170,19 @@ class custom_warp_exchange
     // Struct used for creating a raw_storage object for this primitive's temporary storage.
     struct storage_type_
     {
-        T buffer[warp_items];
+        uninitialized_array<T, warp_items> buffer;
     };
 
 public:
     /// \brief Struct used to allocate a temporary memory that is required for thread
     /// communication during operations provided by the related parallel primitive.
     ///
-    /// Depending on the implemention the operations exposed by parallel primitive may
+    /// Depending on the implementation the operations exposed by parallel primitive may
     /// require a temporary storage for thread communication. The storage should be allocated
     /// using keywords <tt>__shared__</tt>. It can be aliased to
     /// an externally allocated memory, or be a part of a union type with other storage types
     /// to increase shared memory reusability.
-#ifndef DOXYGEN_SHOULD_SKIP_THIS // hides storage_type implementation for Doxygen
-    ROCPRIM_DETAIL_SUPPRESS_DEPRECATION_WITH_PUSH
-    using storage_type = detail::raw_storage<storage_type_>;
-    ROCPRIM_DETAIL_SUPPRESS_DEPRECATION_POP
-#else
     using storage_type = storage_type_; // only for Doxygen
-#endif
 
     /// \brief Orders \p input values according to ranks using temporary storage,
     /// then writes the values to \p output in a striped manner.
@@ -211,24 +205,24 @@ public:
                             const OffsetT (&ranks)[ItemsPerThread],
                             storage_type& storage)
     {
-        const unsigned int flat_id  = ::rocprim::detail::logical_lane_id<WarpSize>();
-        storage_type_&     storage_ = storage.get();
+        const unsigned int flat_id = ::rocprim::detail::logical_lane_id<WarpSize>();
 
         ROCPRIM_UNROLL
         for(unsigned int i = 0; i < ItemsPerThread; i++)
         {
             if(ranks[i] < warp_items)
             {
-                storage_.buffer[ranks[i]] = input[i];
+                storage.buffer.emplace(ranks[i], input[i]);
             }
         }
         ::rocprim::syncthreads();
+        const auto& storage_buffer = storage.buffer.get_unsafe_array();
 
         ROCPRIM_UNROLL
         for(unsigned int i = 0; i < ItemsPerThread; i++)
         {
             unsigned int item_offset = (i * WarpSize) + flat_id;
-            output[i]                = storage_.buffer[item_offset];
+            output[i]                = storage_buffer[item_offset];
         }
     }
 };
@@ -779,11 +773,12 @@ void non_trivial_kernel_impl(InputIterator                  input,
                              const std::size_t              number_of_tiles,
                              const std::size_t              size)
 {
-    static constexpr unsigned int         block_size        = Config::block_size;
-    static constexpr unsigned int         items_per_thread  = Config::items_per_thread;
-    static constexpr unsigned int         tiles_per_block   = Config::tiles_per_block;
-    static constexpr block_load_method    load_input_method = Config::load_keys_method;
-    static constexpr block_scan_algorithm scan_algorithm    = Config::scan_algorithm;
+    static constexpr non_trivial_runs_config_params params     = device_params<Config>();
+    static constexpr unsigned int                   block_size = params.kernel_config.block_size;
+    static constexpr unsigned int         items_per_thread  = params.kernel_config.items_per_thread;
+    static constexpr unsigned int         tiles_per_block   = params.tiles_per_block;
+    static constexpr block_load_method    load_input_method = params.load_input_method;
+    static constexpr block_scan_algorithm scan_algorithm    = params.scan_algorithm;
     static constexpr unsigned int         items_per_tile    = block_size * items_per_thread;
 
     using input_type  = ::rocprim::detail::value_type_t<InputIterator>;

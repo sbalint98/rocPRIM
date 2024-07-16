@@ -1084,6 +1084,81 @@ struct nth_element_config : public detail::nth_element_config_params
 
 namespace detail
 {
+struct non_trivial_runs_config_tag
+{};
+
+struct non_trivial_runs_config_params
+{
+    kernel_config_params kernel_config;
+    block_load_method    load_input_method;
+    block_scan_algorithm scan_algorithm;
+};
+
+} // namespace detail
+
+/// \brief Configuration of device-level run length encode (non-trivial runs) operation.
+///
+/// \tparam BlockSize - number of threads in a block.
+/// \tparam ItemsPerThread - number of items processed by each thread.
+/// \tparam LoadInputMethod - method for loading inputs.
+/// \tparam BlockScanMethod - algorithm for block scan.
+template<unsigned int                 BlockSize,
+         unsigned int                 ItemsPerThread,
+         ::rocprim::block_load_method LoadInputMethod
+         = ::rocprim::block_load_method::block_load_transpose,
+         ::rocprim::block_scan_algorithm BlockScanAlgorithm
+         = ::rocprim::block_scan_algorithm::using_warp_scan>
+struct non_trivial_runs_config : public detail::non_trivial_runs_config_params
+{
+    /// \brief Identifies the algorithm associated to the config.
+    using tag = detail::non_trivial_runs_config_tag;
+#ifndef DOXYGEN_DOCUMENTATION_BUILD
+    /// \brief Number of threads in a block.
+    static constexpr unsigned int block_size = BlockSize;
+    /// \brief Number of items processed by each thread.
+    static constexpr unsigned int items_per_thread = ItemsPerThread;
+    /// \brief Method for loading inputs.
+    static constexpr block_load_method load_input_method = LoadInputMethod;
+    /// \brief Algorithm for block scan.
+    static constexpr block_scan_algorithm scan_algorithm = BlockScanAlgorithm;
+
+    constexpr non_trivial_runs_config()
+        : detail::non_trivial_runs_config_params{
+            {BlockSize, ItemsPerThread},
+            LoadInputMethod, BlockScanAlgorithm
+    } {};
+#endif // DOXYGEN_DOCUMENTATION_BUILD
+};
+
+namespace detail
+{
+
+template<typename InputT, int ItemScaleBase = 15>
+struct default_non_trivial_runs_config_base
+{
+    using OffsetCountPairT = ::rocprim::tuple<unsigned int, unsigned int>;
+
+    static constexpr unsigned int size_memory_per_item
+        = std::max(sizeof(InputT), sizeof(OffsetCountPairT));
+    static constexpr unsigned int item_scale
+        = static_cast<unsigned int>(ceiling_div(size_memory_per_item, 2 * sizeof(int)));
+    static constexpr unsigned int items_per_thread = std::max(1u, ItemScaleBase / item_scale);
+
+    // Additional shared memory is required by the lookback scan state.
+    static constexpr unsigned int shared_mem_offset
+        = sizeof(typename offset_lookback_scan_prefix_op<
+                 OffsetCountPairT,
+                 lookback_scan_state<OffsetCountPairT>>::storage_type);
+
+    using type
+        = non_trivial_runs_config<detail::limit_block_size<256U,
+                                                           items_per_thread * size_memory_per_item,
+                                                           ROCPRIM_WARP_SIZE_64,
+                                                           shared_mem_offset>::value,
+                                  items_per_thread,
+                                  block_load_method::block_load_transpose,
+                                  block_scan_algorithm::using_warp_scan>;
+};
 
 struct find_first_of_config_params
 {
