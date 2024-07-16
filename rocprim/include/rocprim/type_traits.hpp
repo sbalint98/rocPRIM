@@ -370,6 +370,35 @@ struct invoke_result_impl<decltype(void(INVOKE(std::declval<F>(), std::declval<A
 };
 
 template<class T>
+struct is_tuple
+{
+public:
+    static constexpr bool value = false;
+};
+
+template<class... Args>
+struct is_tuple<::rocprim::tuple<Args...>>
+{
+private:
+    template<size_t Index>
+    ROCPRIM_HOST_DEVICE
+    static constexpr bool is_tuple_impl()
+    {
+        return is_tuple_impl<Index + 1>();
+    }
+
+    template<>
+    ROCPRIM_HOST_DEVICE
+    static constexpr bool is_tuple_impl<sizeof...(Args)>()
+    {
+        return true;
+    }
+
+public:
+    static constexpr bool value = is_tuple_impl<0>();
+};
+
+template<class T>
 struct is_tuple_of_references
 {
     static_assert(sizeof(T) == 0, "is_tuple_of_references is only implemented for rocprim::tuple");
