@@ -1124,7 +1124,7 @@ inline void add_common_benchmark_info()
     num("hdp_arch_has_dynamic_parallelism", arch.hasDynamicParallelism);
 }
 
-inline const char* get_block_scan_method_name(rocprim::block_scan_algorithm alg)
+inline const char* get_block_scan_algorithm_name(rocprim::block_scan_algorithm alg)
 {
     switch(alg)
     {
