@@ -21,23 +21,24 @@
 #ifndef ROCPRIM_DEVICE_DEVICE_RUN_LENGTH_ENCODE_HPP_
 #define ROCPRIM_DEVICE_DEVICE_RUN_LENGTH_ENCODE_HPP_
 
-#include <iostream>
-#include <iterator>
-#include <type_traits>
+#include "device_reduce_by_key.hpp"
+#include "device_run_length_encode_config.hpp"
+
+#include "detail/device_config_helper.hpp"
+#include "detail/device_run_length_encode.hpp"
 
 #include "../common.hpp"
 #include "../config.hpp"
 #include "../detail/various.hpp"
-
 #include "../iterator/constant_iterator.hpp"
-#include "../iterator/counting_iterator.hpp"
-#include "../iterator/discard_iterator.hpp"
-#include "../iterator/zip_iterator.hpp"
+#include "../type_traits.hpp"
 
-#include "detail/device_config_helper.hpp"
-#include "device_reduce_by_key.hpp"
-#include "device_run_length_encode_config.hpp"
-#include "device_select.hpp"
+#include <algorithm>
+#include <chrono>
+#include <cstddef>
+#include <ios>
+#include <iostream>
+#include <iterator>
 
 BEGIN_ROCPRIM_NAMESPACE
 
@@ -47,6 +48,204 @@ BEGIN_ROCPRIM_NAMESPACE
 namespace detail
 {
 
+namespace run_length_encode
+{
+
+template<typename Config,
+         typename OffsetCountPairType,
+         typename InputIterator,
+         typename OffsetsOutputIterator,
+         typename CountsOutputIterator,
+         typename RunsCountOutputIterator,
+         typename LookbackScanState>
+ROCPRIM_KERNEL
+    __launch_bounds__(Config::block_size)
+void non_trivial_kernel(const InputIterator                  input,
+                        const OffsetsOutputIterator          offsets_output,
+                        const CountsOutputIterator           counts_output,
+                        const RunsCountOutputIterator        runs_count_output,
+                        const LookbackScanState              scan_state,
+                        const ordered_block_id<unsigned int> ordered_tile_id,
+                        const std::size_t                    number_of_tiles,
+                        const std::size_t                    size)
+{
+    run_length_encode::non_trivial_kernel_impl<Config, OffsetCountPairType>(input,
+                                                                            offsets_output,
+                                                                            counts_output,
+                                                                            runs_count_output,
+                                                                            scan_state,
+                                                                            ordered_tile_id,
+                                                                            number_of_tiles,
+                                                                            size);
+}
+
+template<class Config,
+         class InputIterator,
+         class OffsetsOutputIterator,
+         class CountsOutputIterator,
+         class RunsCountOutputIterator>
+hipError_t run_length_encode_non_trivial_runs_impl(void*                   temporary_storage,
+                                                   size_t&                 storage_size,
+                                                   InputIterator           input,
+                                                   const size_t            size,
+                                                   OffsetsOutputIterator   offsets_output,
+                                                   CountsOutputIterator    counts_output,
+                                                   RunsCountOutputIterator runs_count_output,
+                                                   const hipStream_t       stream,
+                                                   const bool              debug_synchronous)
+{
+    using input_type  = ::rocprim::detail::value_type_t<InputIterator>;
+    using offset_type = unsigned int;
+    using count_type  = unsigned int;
+    using offset_count_pair_type
+        = run_length_encode::offset_count_pair_type_t<offset_type, count_type>; // accumulator_type
+
+    using config = detail::default_or_custom_config<
+        Config,
+        reduce_by_key::default_config<ROCPRIM_TARGET_ARCH, input_type, offset_count_pair_type>>;
+
+    using scan_state_type
+        = ::rocprim::detail::lookback_scan_state<offset_count_pair_type, /*UseSleep=*/false>;
+    using scan_state_with_sleep_type
+        = ::rocprim::detail::lookback_scan_state<offset_count_pair_type, /*UseSleep=*/true>;
+
+    using ordered_tile_id_type = detail::ordered_block_id<unsigned int>;
+
+    constexpr unsigned int block_size      = config::block_size;
+    constexpr unsigned int tiles_per_block = config::tiles_per_block;
+    constexpr unsigned int items_per_tile  = block_size * config::items_per_thread;
+
+    // Number of tiles in a single launch (or the only launch if it fits)
+    const std::size_t number_of_tiles  = detail::ceiling_div(size, items_per_tile);
+    const std::size_t number_of_blocks = detail::ceiling_div(number_of_tiles, tiles_per_block);
+
+    // Calculate required temporary storage
+    void*                          scan_state_storage;
+    ordered_tile_id_type::id_type* ordered_bid_storage;
+
+    detail::temp_storage::layout layout{};
+    hipError_t result = scan_state_type::get_temp_storage_layout(number_of_tiles, stream, layout);
+    if(result != hipSuccess)
+    {
+        return result;
+    }
+
+    result = detail::temp_storage::partition(
+        temporary_storage,
+        storage_size,
+        detail::temp_storage::make_linear_partition(
+            // This is valid even with scan_state_with_sleep_type
+            detail::temp_storage::make_partition(&scan_state_storage, layout),
+            detail::temp_storage::make_partition(&ordered_bid_storage,
+                                                 ordered_tile_id_type::get_temp_storage_layout())));
+    if(result != hipSuccess || temporary_storage == nullptr)
+    {
+        return result;
+    }
+
+    bool use_sleep;
+    result = detail::is_sleep_scan_state_used(stream, use_sleep);
+    if(result != hipSuccess)
+    {
+        return result;
+    }
+
+    scan_state_type scan_state{};
+    result = scan_state_type::create(scan_state, scan_state_storage, number_of_tiles, stream);
+    scan_state_with_sleep_type scan_state_with_sleep{};
+    result = scan_state_with_sleep_type::create(scan_state_with_sleep,
+                                                scan_state_storage,
+                                                number_of_tiles,
+                                                stream);
+
+    if(result != hipSuccess)
+    {
+        return result;
+    }
+
+    auto with_scan_state
+        = [use_sleep, scan_state, scan_state_with_sleep](auto&& func) mutable -> decltype(auto)
+    {
+        if(use_sleep)
+        {
+            return func(scan_state_with_sleep);
+        }
+        else
+        {
+            return func(scan_state);
+        }
+    };
+
+    auto ordered_bid = ordered_tile_id_type::create(ordered_bid_storage);
+
+    if(size == 0)
+    {
+        // Fill out runs_count_output with zero
+        return rocprim::transform(rocprim::constant_iterator<std::size_t>(0),
+                                  runs_count_output,
+                                  1,
+                                  rocprim::identity<std::size_t>{},
+                                  stream,
+                                  debug_synchronous);
+    }
+
+    // Start point for time measurements
+    std::chrono::high_resolution_clock::time_point start;
+    if(debug_synchronous)
+    {
+        std::cout << "size:               " << size << '\n';
+        std::cout << "block_size:         " << block_size << '\n';
+        std::cout << "tiles_per_block:    " << tiles_per_block << '\n';
+        std::cout << "number_of_tiles:    " << number_of_tiles << '\n';
+        std::cout << "number_of_blocks:   " << number_of_blocks << '\n';
+        std::cout << "items_per_tile:     " << items_per_tile << '\n';
+        start = std::chrono::high_resolution_clock::now();
+    }
+
+    with_scan_state(
+        [&](const auto scan_state)
+        {
+            const unsigned int block_size = ROCPRIM_DEFAULT_MAX_BLOCK_SIZE;
+            const std::size_t  grid_size  = detail::ceiling_div(number_of_tiles, block_size);
+            hipLaunchKernelGGL(init_lookback_scan_state_kernel,
+                               dim3(grid_size),
+                               dim3(block_size),
+                               0,
+                               stream,
+                               scan_state,
+                               number_of_tiles,
+                               ordered_bid);
+        });
+    ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("init_lookback_scan_state_kernel",
+                                                number_of_tiles,
+                                                start);
+
+    with_scan_state(
+        [&](const auto scan_state)
+        {
+            hipLaunchKernelGGL(
+                HIP_KERNEL_NAME(
+                    run_length_encode::non_trivial_kernel<config, offset_count_pair_type>),
+                dim3(number_of_blocks),
+                dim3(block_size),
+                0,
+                stream,
+                input + 0,
+                offsets_output,
+                counts_output,
+                runs_count_output,
+                scan_state,
+                ordered_bid,
+                number_of_tiles,
+                size);
+        });
+    ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("run_length_encode_non_trivial_runs kernel",
+                                                size,
+                                                start);
+
+    return hipSuccess;
+}
+} // namespace run_length_encode
 } // end detail namespace
 
 /// \brief Parallel run-length encoding for device level.
@@ -264,131 +463,16 @@ hipError_t run_length_encode_non_trivial_runs(void * temporary_storage,
                                               hipStream_t stream = 0,
                                               bool debug_synchronous = false)
 {
-    using input_type = typename std::iterator_traits<InputIterator>::value_type;
-    using offset_type = unsigned int;
-    using count_type = unsigned int;
-    using offset_count_pair = typename ::rocprim::tuple<offset_type, count_type>;
-
-    using config = detail::default_or_custom_config<
-        Config,
-        detail::default_run_length_encode_config<tuple<offset_type, count_type>>>;
-
-    hipError_t error;
-
-    auto reduce_op = [] __device__ (const offset_count_pair& a, const offset_count_pair& b)
-    {
-        return offset_count_pair(
-            ::rocprim::get<0>(a), // Always use offset of the first item of the run
-            ::rocprim::get<1>(a) + ::rocprim::get<1>(b) // Number of items in the run
-        );
-    };
-    auto non_trivial_runs_select_op = [] __device__ (const offset_count_pair& a)
-    {
-        return ::rocprim::get<1>(a) > 1;
-    };
-
-    offset_type * offsets_tmp = nullptr;
-    count_type * counts_tmp = nullptr;
-    count_type * all_runs_count_tmp = nullptr;
-
-    // Calculate size of temporary storage for reduce_by_key operation
-    size_t reduce_by_key_bytes;
-    error = ::rocprim::reduce_by_key<typename config::reduce_by_key>(
-        nullptr, reduce_by_key_bytes,
+    return detail::run_length_encode::run_length_encode_non_trivial_runs_impl<Config>(
+        temporary_storage,
+        storage_size,
         input,
-        ::rocprim::make_zip_iterator(
-            ::rocprim::make_tuple(
-                ::rocprim::make_counting_iterator<offset_type>(0),
-                ::rocprim::make_constant_iterator<count_type>(1)
-            )
-        ),
         size,
-        ::rocprim::make_discard_iterator(),
-        ::rocprim::make_zip_iterator(::rocprim::make_tuple(offsets_tmp, counts_tmp)),
-        all_runs_count_tmp,
-        reduce_op, ::rocprim::equal_to<input_type>(),
-        stream, debug_synchronous
-    );
-    if(error != hipSuccess) return error;
-    reduce_by_key_bytes = ::rocprim::detail::align_size(reduce_by_key_bytes);
-
-    // Calculate size of temporary storage for select operation
-    size_t select_bytes;
-    error = ::rocprim::select<typename config::select>(
-        nullptr, select_bytes,
-        ::rocprim::make_zip_iterator(::rocprim::make_tuple(offsets_tmp, counts_tmp)),
-        ::rocprim::make_zip_iterator(::rocprim::make_tuple(offsets_output, counts_output)),
+        offsets_output,
+        counts_output,
         runs_count_output,
-        size,
-        non_trivial_runs_select_op,
-        stream, debug_synchronous
-    );
-    if(error != hipSuccess) return error;
-    select_bytes = ::rocprim::detail::align_size(select_bytes);
-
-    const size_t offsets_tmp_bytes = ::rocprim::detail::align_size(size * sizeof(offset_type));
-    const size_t counts_tmp_bytes = ::rocprim::detail::align_size(size * sizeof(count_type));
-    const size_t all_runs_count_tmp_bytes = sizeof(count_type);
-    if(temporary_storage == nullptr)
-    {
-        storage_size = ::rocprim::max(reduce_by_key_bytes, select_bytes) +
-            offsets_tmp_bytes + counts_tmp_bytes + all_runs_count_tmp_bytes;
-        return hipSuccess;
-    }
-
-    char * ptr = reinterpret_cast<char *>(temporary_storage);
-    ptr += ::rocprim::max(reduce_by_key_bytes, select_bytes);
-    offsets_tmp = reinterpret_cast<offset_type *>(ptr);
-    ptr += offsets_tmp_bytes;
-    counts_tmp = reinterpret_cast<count_type *>(ptr);
-    ptr += counts_tmp_bytes;
-    all_runs_count_tmp = reinterpret_cast<count_type *>(ptr);
-
-    std::chrono::steady_clock::time_point start;
-
-    if(debug_synchronous) start = std::chrono::steady_clock::now();
-    error = ::rocprim::reduce_by_key<typename config::reduce_by_key>(
-        temporary_storage, reduce_by_key_bytes,
-        input,
-        ::rocprim::make_zip_iterator(
-            ::rocprim::make_tuple(
-                ::rocprim::make_counting_iterator<offset_type>(0),
-                ::rocprim::make_constant_iterator<count_type>(1)
-            )
-        ),
-        size,
-        ::rocprim::make_discard_iterator(), // Ignore unique output
-        ::rocprim::make_zip_iterator(rocprim::make_tuple(offsets_tmp, counts_tmp)),
-        all_runs_count_tmp,
-        reduce_op, ::rocprim::equal_to<input_type>(),
-        stream, debug_synchronous
-    );
-    ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("rocprim::reduce_by_key", size, start);
-
-    // Read count of all runs (including trivial runs)
-    count_type all_runs_count;
-    error = detail::memcpy_and_sync(&all_runs_count,
-                                    all_runs_count_tmp,
-                                    sizeof(count_type),
-                                    hipMemcpyDeviceToHost,
-                                    stream);
-    if(error != hipSuccess)
-        return error;
-
-    // Select non-trivial runs
-    if(debug_synchronous) start = std::chrono::steady_clock::now();
-    error = ::rocprim::select<typename config::select>(
-        temporary_storage, select_bytes,
-        ::rocprim::make_zip_iterator(::rocprim::make_tuple(offsets_tmp, counts_tmp)),
-        ::rocprim::make_zip_iterator(::rocprim::make_tuple(offsets_output, counts_output)),
-        runs_count_output,
-        all_runs_count,
-        non_trivial_runs_select_op,
-        stream, debug_synchronous
-    );
-    ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("rocprim::select", all_runs_count, start);
-
-    return hipSuccess;
+        stream,
+        debug_synchronous);
 }
 
 
