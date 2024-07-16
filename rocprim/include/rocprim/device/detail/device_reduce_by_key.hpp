@@ -34,6 +34,7 @@
 #include "../../thread/thread_operators.hpp"
 
 #include "../../config.hpp"
+#include "../../type_traits.hpp"
 
 #include <iterator>
 #include <type_traits>
@@ -47,12 +48,10 @@ namespace detail
 namespace reduce_by_key
 {
 
-template<typename Iterator>
-using value_type_t = typename std::iterator_traits<Iterator>::value_type;
-
 template<typename ValueIterator, typename BinaryOp>
 using accumulator_type_t =
-    typename invoke_result_binary_op<reduce_by_key::value_type_t<ValueIterator>, BinaryOp>::type;
+    typename invoke_result_binary_op<::rocprim::detail::value_type_t<ValueIterator>,
+                                     BinaryOp>::type;
 
 template<typename AccumulatorType>
 using wrapped_type_t = rocprim::tuple<unsigned int, AccumulatorType>;
@@ -545,7 +544,7 @@ ROCPRIM_DEVICE ROCPRIM_FORCE_INLINE auto
     static constexpr block_scan_algorithm scan_algorithm     = params.scan_algorithm;
     static constexpr unsigned int         items_per_tile     = block_size * items_per_thread;
 
-    using key_type = reduce_by_key::value_type_t<KeyIterator>;
+    using key_type = ::rocprim::detail::value_type_t<KeyIterator>;
 
     using tile_processor = tile_helper<key_type,
                                        AccumulatorType,

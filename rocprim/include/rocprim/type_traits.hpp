@@ -439,6 +439,9 @@ struct float_bit_mask<rocprim::half>
 template<class...>
 using void_t = void;
 
+template<typename Iterator>
+using value_type_t = typename std::iterator_traits<Iterator>::value_type;
+
 } // end namespace detail
 
 /// \brief Behaves like ``std::invoke_result``, but allows the use of invoke_result
