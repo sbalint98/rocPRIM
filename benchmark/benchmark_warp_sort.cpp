@@ -48,9 +48,18 @@ const size_t DEFAULT_BYTES = 1024 * 1024 * 32 *4;
 namespace rp = rocprim;
 
 template<class K, unsigned int BlockSize, unsigned int WarpSize, unsigned int ItemsPerThread>
-__global__
-__launch_bounds__(BlockSize)
-void warp_sort_kernel(K* input_keys, K* output_keys)
+__device__
+auto warp_sort_benchmark(K* /*input_keys*/, K* /*output_keys*/)
+    -> std::enable_if_t<!device_test_enabled_for_warp_size_v<WarpSize>>
+{
+    // This kernel should never be actually called; benchmarks are selected at runtime only
+    // if the current device supports WarpSize
+}
+
+template<class K, unsigned int BlockSize, unsigned int WarpSize, unsigned int ItemsPerThread>
+__device__
+auto warp_sort_benchmark(K* input_keys, K* output_keys)
+    -> std::enable_if_t<device_test_enabled_for_warp_size_v<WarpSize>>
 {
     const unsigned int flat_tid = threadIdx.x;
     const unsigned int items_per_block = BlockSize * ItemsPerThread;
@@ -65,10 +74,38 @@ void warp_sort_kernel(K* input_keys, K* output_keys)
     rp::block_store_direct_blocked(flat_tid, output_keys + block_offset, keys);
 }
 
-template<class K, class V, unsigned int BlockSize, unsigned int WarpSize, unsigned int ItemsPerThread>
+template<class K, unsigned int BlockSize, unsigned int WarpSize, unsigned int ItemsPerThread>
 __global__
 __launch_bounds__(BlockSize)
-void warp_sort_by_key_kernel(K* input_keys, V* input_values, K* output_keys, V* output_values)
+void warp_sort_kernel(K* input_keys, K* output_keys)
+{
+    warp_sort_benchmark<K, BlockSize, WarpSize, ItemsPerThread>(input_keys, output_keys);
+}
+
+template<class K,
+         class V,
+         unsigned int BlockSize,
+         unsigned int WarpSize,
+         unsigned int ItemsPerThread>
+__device__
+auto warp_sort_by_key_benchmark(K* /*input_keys*/,
+                                V* /*input_values*/,
+                                K* /*output_keys*/,
+                                V* /*output_values*/)
+    -> std::enable_if_t<!device_test_enabled_for_warp_size_v<WarpSize>>
+{
+    // This kernel should never be actually called; benchmarks are selected at runtime only
+    // if the current device supports WarpSize
+}
+
+template<class K,
+         class V,
+         unsigned int BlockSize,
+         unsigned int WarpSize,
+         unsigned int ItemsPerThread>
+__device__
+auto warp_sort_by_key_benchmark(K* input_keys, V* input_values, K* output_keys, V* output_values)
+    -> std::enable_if_t<device_test_enabled_for_warp_size_v<WarpSize>>
 {
     const unsigned int flat_tid = threadIdx.x;
     const unsigned int items_per_block = BlockSize * ItemsPerThread;
@@ -85,6 +122,21 @@ void warp_sort_by_key_kernel(K* input_keys, V* input_values, K* output_keys, V* 
 
     rp::block_store_direct_blocked(flat_tid, output_keys + block_offset, keys);
     rp::block_store_direct_blocked(flat_tid, output_values + block_offset, values);
+}
+
+template<class K,
+         class V,
+         unsigned int BlockSize,
+         unsigned int WarpSize,
+         unsigned int ItemsPerThread>
+__global__
+__launch_bounds__(BlockSize)
+void warp_sort_by_key_kernel(K* input_keys, V* input_values, K* output_keys, V* output_values)
+{
+    warp_sort_by_key_benchmark<K, V, BlockSize, WarpSize, ItemsPerThread>(input_keys,
+                                                                          input_values,
+                                                                          output_keys,
+                                                                          output_values);
 }
 
 template<class Key,
@@ -222,29 +274,28 @@ void run_benchmark(benchmark::State&   state,
                                  seed,                                                        \
                                  stream)
 
-#define BENCHMARK_TYPE(type) \
-    CREATE_SORT_BENCHMARK(type,  64, 64, 1), \
-    CREATE_SORT_BENCHMARK(type,  64, 64, 2), \
-    CREATE_SORT_BENCHMARK(type,  64, 64, 4), \
-    CREATE_SORT_BENCHMARK(type, 128, 64, 1), \
-    CREATE_SORT_BENCHMARK(type, 128, 64, 2), \
-    CREATE_SORT_BENCHMARK(type, 128, 64, 4), \
-    CREATE_SORT_BENCHMARK(type, 256, 64, 1), \
-    CREATE_SORT_BENCHMARK(type, 256, 64, 2), \
-    CREATE_SORT_BENCHMARK(type, 256, 64, 4), \
-    CREATE_SORT_BENCHMARK(type,  64, 32, 1), \
-    CREATE_SORT_BENCHMARK(type,  64, 32, 2), \
-    CREATE_SORT_BENCHMARK(type,  64, 16, 1), \
-    CREATE_SORT_BENCHMARK(type,  64, 16, 2), \
-    CREATE_SORT_BENCHMARK(type,  64, 16, 4)
+// for devices with a physical warp size of at least 64
+#define BENCHMARK_TYPE_WS32(type)                                                       \
+    CREATE_SORT_BENCHMARK(type, 64, 16, 1), CREATE_SORT_BENCHMARK(type, 64, 16, 2),     \
+        CREATE_SORT_BENCHMARK(type, 64, 16, 4), CREATE_SORT_BENCHMARK(type, 64, 32, 1), \
+        CREATE_SORT_BENCHMARK(type, 64, 32, 2)
 
-#define BENCHMARK_KEY_TYPE(type, value) \
-    CREATE_SORTBYKEY_BENCHMARK(type, value, 64, 64,  1), \
-    CREATE_SORTBYKEY_BENCHMARK(type, value, 64, 64,  2), \
-    CREATE_SORTBYKEY_BENCHMARK(type, value, 64, 64,  4), \
-    CREATE_SORTBYKEY_BENCHMARK(type, value, 256, 64, 1), \
-    CREATE_SORTBYKEY_BENCHMARK(type, value, 256, 64, 2), \
-    CREATE_SORTBYKEY_BENCHMARK(type, value, 256, 64, 4)
+// for devices with a physical warp size of at least 64
+#define BENCHMARK_TYPE_WS64(type)                                                         \
+    CREATE_SORT_BENCHMARK(type, 64, 64, 1), CREATE_SORT_BENCHMARK(type, 64, 64, 2),       \
+        CREATE_SORT_BENCHMARK(type, 64, 64, 4), CREATE_SORT_BENCHMARK(type, 128, 64, 1),  \
+        CREATE_SORT_BENCHMARK(type, 128, 64, 2), CREATE_SORT_BENCHMARK(type, 128, 64, 4), \
+        CREATE_SORT_BENCHMARK(type, 256, 64, 1), CREATE_SORT_BENCHMARK(type, 256, 64, 2), \
+        CREATE_SORT_BENCHMARK(type, 256, 64, 4)
+
+// for devices with a physical warp size of at least 64
+#define BENCHMARK_KEY_TYPE_WS64(type, value)                 \
+    CREATE_SORTBYKEY_BENCHMARK(type, value, 64, 64, 1),      \
+        CREATE_SORTBYKEY_BENCHMARK(type, value, 64, 64, 2),  \
+        CREATE_SORTBYKEY_BENCHMARK(type, value, 64, 64, 4),  \
+        CREATE_SORTBYKEY_BENCHMARK(type, value, 256, 64, 1), \
+        CREATE_SORTBYKEY_BENCHMARK(type, value, 256, 64, 2), \
+        CREATE_SORTBYKEY_BENCHMARK(type, value, 256, 64, 4)
 
 int main(int argc, char *argv[])
 {
@@ -281,26 +332,39 @@ int main(int argc, char *argv[])
     using custom_char_double     = custom_type<char, double>;
     using custom_longlong_double = custom_type<long long, double>;
 
-    std::vector<benchmark::internal::Benchmark*> benchmarks =
-    {
-        BENCHMARK_TYPE(int),
-        BENCHMARK_TYPE(float),
-        BENCHMARK_TYPE(double),
-        BENCHMARK_TYPE(int8_t),
-        BENCHMARK_TYPE(uint8_t),
-        BENCHMARK_TYPE(rocprim::half),
+    std::vector<benchmark::internal::Benchmark*> benchmarks = {BENCHMARK_TYPE_WS32(int),
+                                                               BENCHMARK_TYPE_WS32(float),
+                                                               BENCHMARK_TYPE_WS32(double),
+                                                               BENCHMARK_TYPE_WS32(int8_t),
+                                                               BENCHMARK_TYPE_WS32(uint8_t),
+                                                               BENCHMARK_TYPE_WS32(rocprim::half)};
 
-        BENCHMARK_KEY_TYPE(float, float),
-        BENCHMARK_KEY_TYPE(unsigned int, int),
-        BENCHMARK_KEY_TYPE(int, custom_double2),
-        BENCHMARK_KEY_TYPE(int, custom_int_double),
-        BENCHMARK_KEY_TYPE(custom_int2, custom_double2),
-        BENCHMARK_KEY_TYPE(custom_int2, custom_char_double),
-        BENCHMARK_KEY_TYPE(custom_int2, custom_longlong_double),
-        BENCHMARK_KEY_TYPE(int8_t, int8_t),
-        BENCHMARK_KEY_TYPE(uint8_t, uint8_t),
-        BENCHMARK_KEY_TYPE(rocprim::half, rocprim::half)
-    };
+    int hip_device = 0;
+    HIP_CHECK(::rocprim::detail::get_device_from_stream(stream, hip_device));
+    if(is_warp_size_supported(64, hip_device))
+    {
+        std::vector<benchmark::internal::Benchmark*> additional_benchmarks
+            = {BENCHMARK_TYPE_WS64(int),
+               BENCHMARK_TYPE_WS64(float),
+               BENCHMARK_TYPE_WS64(double),
+               BENCHMARK_TYPE_WS64(int8_t),
+               BENCHMARK_TYPE_WS64(uint8_t),
+               BENCHMARK_TYPE_WS64(rocprim::half),
+
+               BENCHMARK_KEY_TYPE_WS64(float, float),
+               BENCHMARK_KEY_TYPE_WS64(unsigned int, int),
+               BENCHMARK_KEY_TYPE_WS64(int, custom_double2),
+               BENCHMARK_KEY_TYPE_WS64(int, custom_int_double),
+               BENCHMARK_KEY_TYPE_WS64(custom_int2, custom_double2),
+               BENCHMARK_KEY_TYPE_WS64(custom_int2, custom_char_double),
+               BENCHMARK_KEY_TYPE_WS64(custom_int2, custom_longlong_double),
+               BENCHMARK_KEY_TYPE_WS64(int8_t, int8_t),
+               BENCHMARK_KEY_TYPE_WS64(uint8_t, uint8_t),
+               BENCHMARK_KEY_TYPE_WS64(rocprim::half, rocprim::half)};
+        benchmarks.insert(benchmarks.end(),
+                          additional_benchmarks.begin(),
+                          additional_benchmarks.end());
+    }
 
     // Use manual timing
     for(auto& b : benchmarks)

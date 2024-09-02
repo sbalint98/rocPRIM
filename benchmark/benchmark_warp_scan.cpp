@@ -46,9 +46,18 @@ const size_t DEFAULT_BYTES = 1024 * 1024 * 32 * 4;
 namespace rp = rocprim;
 
 template<class T, unsigned int WarpSize, unsigned int Trials>
-__global__
-__launch_bounds__(ROCPRIM_DEFAULT_MAX_BLOCK_SIZE)
-void warp_inclusive_scan_kernel(const T* input, T* output)
+__device__
+auto warp_inclusive_scan_benchmark(const T* /*input*/, T* /*output*/)
+    -> std::enable_if_t<!device_test_enabled_for_warp_size_v<WarpSize>>
+{
+    // This kernel should never be actually called; benchmarks are selected at runtime only
+    // if the current device supports WarpSize
+}
+
+template<class T, unsigned int WarpSize, unsigned int Trials>
+__device__
+auto warp_inclusive_scan_benchmark(const T* input, T* output)
+    -> std::enable_if_t<device_test_enabled_for_warp_size_v<WarpSize>>
 {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     auto value = input[i];
@@ -67,7 +76,24 @@ void warp_inclusive_scan_kernel(const T* input, T* output)
 template<class T, unsigned int WarpSize, unsigned int Trials>
 __global__
 __launch_bounds__(ROCPRIM_DEFAULT_MAX_BLOCK_SIZE)
-void warp_exclusive_scan_kernel(const T* input, T* output, const T init)
+void warp_inclusive_scan_kernel(const T* input, T* output)
+{
+    warp_inclusive_scan_benchmark<T, WarpSize, Trials>(input, output);
+}
+
+template<class T, unsigned int WarpSize, unsigned int Trials>
+__device__
+auto warp_exclusive_scan_benchmark(const T* /*input*/, T* /*output*/, const T /*init*/)
+    -> std::enable_if_t<!device_test_enabled_for_warp_size_v<WarpSize>>
+{
+    // This kernel should never be actually called; benchmarks are selected at runtime only
+    // if the current device supports WarpSize
+}
+
+template<class T, unsigned int WarpSize, unsigned int Trials>
+__device__
+auto warp_exclusive_scan_benchmark(const T* input, T* output, const T init)
+    -> std::enable_if_t<device_test_enabled_for_warp_size_v<WarpSize>>
 {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     auto value = input[i];
@@ -81,6 +107,14 @@ void warp_exclusive_scan_kernel(const T* input, T* output, const T init)
     }
 
     output[i] = value;
+}
+
+template<class T, unsigned int WarpSize, unsigned int Trials>
+__global__
+__launch_bounds__(ROCPRIM_DEFAULT_MAX_BLOCK_SIZE)
+void warp_exclusive_scan_kernel(const T* input, T* output, const T init)
+{
+    warp_exclusive_scan_benchmark<T, WarpSize, Trials>(input, output, init);
 }
 
 template<
@@ -170,15 +204,15 @@ void run_benchmark(benchmark::State& state, hipStream_t stream, size_t bytes)
         stream,                                                                        \
         bytes)
 
-#define BENCHMARK_TYPE(type) \
-    CREATE_BENCHMARK(type, 64, 64, Inclusive), \
-    CREATE_BENCHMARK(type, 128, 64, Inclusive), \
-    CREATE_BENCHMARK(type, 256, 64, Inclusive), \
-    CREATE_BENCHMARK(type, 256, 32, Inclusive), \
-    CREATE_BENCHMARK(type, 256, 16, Inclusive), \
-    CREATE_BENCHMARK(type, 63, 63, Inclusive), \
-    CREATE_BENCHMARK(type, 62, 31, Inclusive), \
-    CREATE_BENCHMARK(type, 60, 15, Inclusive)
+// for devices with a physical warp size of at least 32
+#define BENCHMARK_TYPE_WS32(type)                                                          \
+    CREATE_BENCHMARK(type, 60, 15, Inclusive), CREATE_BENCHMARK(type, 256, 16, Inclusive), \
+        CREATE_BENCHMARK(type, 62, 31, Inclusive), CREATE_BENCHMARK(type, 256, 32, Inclusive)
+
+// for devices with a physical warp size of at least 64
+#define BENCHMARK_TYPE_WS64(type)                                                         \
+    CREATE_BENCHMARK(type, 63, 63, Inclusive), CREATE_BENCHMARK(type, 64, 64, Inclusive), \
+        CREATE_BENCHMARK(type, 128, 64, Inclusive), CREATE_BENCHMARK(type, 256, 64, Inclusive)
 
 template<bool Inclusive>
 void add_benchmarks(std::vector<benchmark::internal::Benchmark*>& benchmarks,
@@ -188,18 +222,30 @@ void add_benchmarks(std::vector<benchmark::internal::Benchmark*>& benchmarks,
     using custom_double2 = custom_type<double, double>;
     using custom_int_double = custom_type<int, double>;
 
-    std::vector<benchmark::internal::Benchmark*> new_benchmarks =
+    std::vector<benchmark::internal::Benchmark*> bs = {BENCHMARK_TYPE_WS32(int),
+                                                       BENCHMARK_TYPE_WS32(float),
+                                                       BENCHMARK_TYPE_WS32(double),
+                                                       BENCHMARK_TYPE_WS32(int8_t),
+                                                       BENCHMARK_TYPE_WS32(uint8_t),
+                                                       BENCHMARK_TYPE_WS32(rocprim::half),
+                                                       BENCHMARK_TYPE_WS32(custom_double2),
+                                                       BENCHMARK_TYPE_WS32(custom_int_double)};
+    benchmarks.insert(benchmarks.end(), bs.begin(), bs.end());
+
+    int hip_device = 0;
+    HIP_CHECK(::rocprim::detail::get_device_from_stream(stream, hip_device));
+    if(is_warp_size_supported(64, hip_device))
     {
-        BENCHMARK_TYPE(int),
-        BENCHMARK_TYPE(float),
-        BENCHMARK_TYPE(double),
-        BENCHMARK_TYPE(int8_t),
-        BENCHMARK_TYPE(uint8_t),
-        BENCHMARK_TYPE(rocprim::half),
-        BENCHMARK_TYPE(custom_double2),
-        BENCHMARK_TYPE(custom_int_double)
-    };
-    benchmarks.insert(benchmarks.end(), new_benchmarks.begin(), new_benchmarks.end());
+        std::vector<benchmark::internal::Benchmark*> bs = {BENCHMARK_TYPE_WS64(int),
+                                                           BENCHMARK_TYPE_WS64(float),
+                                                           BENCHMARK_TYPE_WS64(double),
+                                                           BENCHMARK_TYPE_WS64(int8_t),
+                                                           BENCHMARK_TYPE_WS64(uint8_t),
+                                                           BENCHMARK_TYPE_WS64(rocprim::half),
+                                                           BENCHMARK_TYPE_WS64(custom_double2),
+                                                           BENCHMARK_TYPE_WS64(custom_int_double)};
+        benchmarks.insert(benchmarks.end(), bs.begin(), bs.end());
+    }
 }
 
 int main(int argc, char *argv[])
