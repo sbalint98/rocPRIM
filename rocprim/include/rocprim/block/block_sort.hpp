@@ -145,18 +145,18 @@ struct select_block_sort_impl<block_sort_algorithm::stable_merge_sort>
 /// \par Examples
 /// \parblock
 /// In the examples sort is performed on a block of 256 threads, each thread provides
-/// one \p int value, results are returned using the same variable as for input.
+/// 8 \p int values, results are returned using the same variable as for input.
 ///
 /// \code{.cpp}
 /// __global__ void example_kernel(...)
 /// {
-///     // specialize block_sort for int, block of 256 threads,
+///     // specialize block_sort for int, block of 256 threads, and 8 items per thread
 ///     // key-only sort
-///     using block_sort_int = rocprim::block_sort<int, 256>;
+///     using block_sort_int = rocprim::block_sort<int, 256, 8>;
 ///     // allocate storage in shared memory
 ///     __shared__ block_sort_int::storage_type storage;
 ///
-///     int input = ...;
+///     int input[8] = ...;
 ///     // execute block sort (ascending)
 ///     block_sort_int().sort(
 ///         input,
@@ -246,7 +246,7 @@ public:
     /// \code{.cpp}
     /// __global__ void example_kernel(...)
     /// {
-    ///     // specialize block_sort for int, block of 256 threads,
+    ///     // specialize block_sort for int, block of 256 threads
     ///     // key-only sort
     ///     using block_sort_int = rocprim::block_sort<int, 256>;
     ///     // allocate storage in shared memory
@@ -333,17 +333,17 @@ public:
     ///
     /// \parblock
     /// In the examples sort is performed on a block of 256 threads, each thread provides
-    /// one \p int key and one \p int value, results are returned using the same variable as for input.
+    /// 8 \p int keys and one \p int value, results are returned using the same variable as for input.
     ///
     /// \code{.cpp}
     /// __global__ void example_kernel(...)
     /// {
-    ///     // specialize block_sort for int, block of 256 threads,
-    ///     using block_sort_int = rocprim::block_sort<int, 256, int>;
+    ///     // specialize block_sort for int, block of 256 threads, and 8 items per thread
+    ///     using block_sort_int = rocprim::block_sort<int, 256, 8, int>;
     ///     // allocate storage in shared memory
     ///     __shared__ block_sort_int::storage_type storage;
     ///
-    ///     int key = ...;
+    ///     int key[8] = ...;
     ///     int value = ...;
     ///     // execute block sort (ascending)
     ///     block_sort_int().sort(
