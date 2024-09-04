@@ -8,6 +8,7 @@ Documentation for rocPRIM is available at
 ### Additions
 
 * Added the parallel `find_first_of` device function with autotuned configurations, this function is similar to `std::find_first_of`, it searches for the first occurrence of any of the provided elements.
+* Added a parallel device-level function, `rocprim::adjacent_find`, similar to the C++ Standard Library `std::adjacent_find` algorithm.
 
 ### Changes
 
