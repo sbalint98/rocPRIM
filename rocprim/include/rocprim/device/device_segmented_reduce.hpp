@@ -72,7 +72,7 @@ ROCPRIM_KERNEL __launch_bounds__(
             std::cout << name << "(" << size << ")"; \
             auto __error = hipStreamSynchronize(stream); \
             if(__error != hipSuccess) return __error; \
-            auto _end = std::chrono::high_resolution_clock::now(); \
+            auto _end = std::chrono::steady_clock::now(); \
             auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
             std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
         } \
@@ -126,9 +126,9 @@ hipError_t segmented_reduce_impl(void * temporary_storage,
     if( segments == 0u )
         return hipSuccess;
 
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::steady_clock::time_point start;
 
-    if(debug_synchronous) start = std::chrono::high_resolution_clock::now();
+    if(debug_synchronous) start = std::chrono::steady_clock::now();
     hipLaunchKernelGGL(
         HIP_KERNEL_NAME(segmented_reduce_kernel<config>),
         dim3(segments), dim3(block_size), 0, stream,

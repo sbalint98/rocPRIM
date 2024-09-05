@@ -134,7 +134,7 @@ ROCPRIM_KERNEL __launch_bounds__(
             auto __error = hipStreamSynchronize(stream);                                         \
             if(__error != hipSuccess)                                                            \
                 return __error;                                                                  \
-            auto _end = std::chrono::high_resolution_clock::now();                               \
+            auto _end = std::chrono::steady_clock::now();                               \
             auto _d   = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
             std::cout << " " << _d.count() * 1000 << " ms" << '\n';                              \
         }                                                                                        \
@@ -217,11 +217,11 @@ inline hipError_t histogram_impl(void*          temporary_storage,
         max_bins = std::max(max_bins, bins[channel]);
     }
 
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::steady_clock::time_point start;
 
     if(debug_synchronous)
     {
-        start = std::chrono::high_resolution_clock::now();
+        start = std::chrono::steady_clock::now();
     }
     hipLaunchKernelGGL(HIP_KERNEL_NAME(init_histogram_kernel<config, ActiveChannels>),
                        dim3(::rocprim::detail::ceiling_div(max_bins, block_size)),
@@ -241,7 +241,7 @@ inline hipError_t histogram_impl(void*          temporary_storage,
     {
         if(debug_synchronous)
         {
-            start = std::chrono::high_resolution_clock::now();
+            start = std::chrono::steady_clock::now();
         }
         auto kernel = HIP_KERNEL_NAME(histogram_shared_kernel<config,
                                                               Channels,
@@ -318,7 +318,7 @@ inline hipError_t histogram_impl(void*          temporary_storage,
     {
         if(debug_synchronous)
         {
-            start = std::chrono::high_resolution_clock::now();
+            start = std::chrono::steady_clock::now();
         }
         hipLaunchKernelGGL(
             HIP_KERNEL_NAME(histogram_global_kernel<config, Channels, ActiveChannels>),

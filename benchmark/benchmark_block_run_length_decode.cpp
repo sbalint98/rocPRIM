@@ -140,7 +140,7 @@ void run_benchmark(benchmark::State& state, size_t N, const managed_seed& seed, 
 
     for(auto _ : state)
     {
-        auto start = std::chrono::high_resolution_clock::now();
+        auto start = std::chrono::steady_clock::now();
         hipLaunchKernelGGL(HIP_KERNEL_NAME(block_run_length_decode_kernel<ItemT,
                                                                           OffsetT,
                                                                           BlockSize,
@@ -157,7 +157,7 @@ void run_benchmark(benchmark::State& state, size_t N, const managed_seed& seed, 
         HIP_CHECK(hipPeekAtLastError());
         HIP_CHECK(hipDeviceSynchronize());
 
-        auto end = std::chrono::high_resolution_clock::now();
+        auto end = std::chrono::steady_clock::now();
         auto elapsed_seconds
             = std::chrono::duration_cast<std::chrono::duration<double>>(end - start);
 

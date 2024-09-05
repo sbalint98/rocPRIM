@@ -145,7 +145,7 @@ void device_block_merge_mergepath_kernel(KeysInputIterator    keys_input,
             std::cout << name << "(" << size << ")"; \
             auto __error = hipStreamSynchronize(stream); \
             if(__error != hipSuccess) return __error; \
-            auto _end = std::chrono::high_resolution_clock::now(); \
+            auto _end = std::chrono::steady_clock::now(); \
             auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
             std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
         } \
@@ -323,7 +323,7 @@ inline hipError_t merge_sort_block_merge(
     }
 
     // Start point for time measurements
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::steady_clock::time_point start;
 
     bool temporary_store = true;
     for(OffsetT block = sorted_block_size; block < size; block *= 2)
@@ -338,7 +338,7 @@ inline hipError_t merge_sort_block_merge(
             if(use_mergepath && block >= merge_mergepath_items_per_block)
             {
                 if(debug_synchronous)
-                    start = std::chrono::high_resolution_clock::now();
+                    start = std::chrono::steady_clock::now();
                 hipLaunchKernelGGL(
                     HIP_KERNEL_NAME(device_block_merge_mergepath_partition_kernel<config>),
                     dim3(merge_partition_number_of_blocks),
@@ -357,7 +357,7 @@ inline hipError_t merge_sort_block_merge(
                     start);
 
                 if(debug_synchronous)
-                    start = std::chrono::high_resolution_clock::now();
+                    start = std::chrono::steady_clock::now();
                 hipLaunchKernelGGL(HIP_KERNEL_NAME(device_block_merge_mergepath_kernel<config>),
                                    calculate_grid_dim(merge_mergepath_number_of_blocks,
                                                       merge_mergepath_block_size),
@@ -380,7 +380,7 @@ inline hipError_t merge_sort_block_merge(
             else
             {
                 if(debug_synchronous)
-                    start = std::chrono::high_resolution_clock::now();
+                    start = std::chrono::steady_clock::now();
                 // As this kernel is only called with small sizes, it is safe to use 32-bit integers
                 // for size and block.
                 hipLaunchKernelGGL(HIP_KERNEL_NAME(device_block_merge_oddeven_kernel<config>),
@@ -483,9 +483,9 @@ inline hipError_t merge_sort_block_sort(KeysInputIterator    keys_input,
     }
 
     // Start point for time measurements
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::steady_clock::time_point start;
     if(debug_synchronous)
-        start = std::chrono::high_resolution_clock::now();
+        start = std::chrono::steady_clock::now();
 
     hipLaunchKernelGGL(
         HIP_KERNEL_NAME(block_sort_kernel<config>),
