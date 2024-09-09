@@ -11,6 +11,8 @@ Documentation for rocPRIM is available at
 
 ### Changes
 
+* Removed HIP-CPU support. HIP-CPU support was experimental and broken.
+
 ### Fixes
 
 * Fixed an issue where `rocprim::partial_sort_copy` would yield a compile error if the input iterator is const.
