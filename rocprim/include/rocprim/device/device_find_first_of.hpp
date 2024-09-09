@@ -42,9 +42,9 @@ namespace detail
 
 
 
+template<class T>
 ROCPRIM_KERNEL
-static void
-    init_find_first_of_kernel(size_t* output, size_t size, ordered_block_id<size_t> ordered_bid)
+void init_find_first_of_kernel(T* output, T size, ordered_block_id<T> ordered_bid)
 {
     *output = size;
     ordered_bid.reset();
@@ -259,6 +259,8 @@ hipError_t find_first_of_impl(void*          temporary_storage,
 
     return transform(tmp_output, output, 1, ::rocprim::identity<void>(), stream, debug_synchronous);
 }
+
+#undef ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR
 
 } // namespace detail
 
