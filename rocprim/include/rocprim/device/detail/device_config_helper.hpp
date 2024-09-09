@@ -1187,7 +1187,6 @@ struct search_config : public detail::search_config_params
 #endif
 };
 
-
 END_ROCPRIM_NAMESPACE
 
 /// @}
