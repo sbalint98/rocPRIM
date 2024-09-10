@@ -26,6 +26,7 @@
 #include "../detail/temp_storage.hpp"
 
 #include "../config.hpp"
+#include "../common.hpp"
 
 #include "config_types.hpp"
 #include "device_merge_sort.hpp"
