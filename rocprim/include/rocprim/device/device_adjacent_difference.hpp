@@ -64,7 +64,7 @@ BEGIN_ROCPRIM_NAMESPACE
             auto __error = hipStreamSynchronize(stream);                                         \
             if(__error != hipSuccess)                                                            \
                 return __error;                                                                  \
-            auto _end = std::chrono::high_resolution_clock::now();                               \
+            auto _end = std::chrono::steady_clock::now();                               \
             auto _d   = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
             std::cout << " " << _d.count() * 1000 << " ms" << '\n';                              \
         }                                                                                        \
@@ -201,14 +201,14 @@ hipError_t adjacent_difference_impl(void* const          temporary_storage,
         const auto current_blocks = ceiling_div(current_size, items_per_block);
         const auto starting_block = i * number_of_blocks_limit;
 
-        std::chrono::time_point<std::chrono::high_resolution_clock> start;
+        std::chrono::time_point<std::chrono::steady_clock> start;
         if(debug_synchronous)
         {
             std::cout << "index:            " << i << '\n';
             std::cout << "current_size:     " << current_size << '\n';
             std::cout << "number of blocks: " << current_blocks << '\n';
 
-            start = std::chrono::high_resolution_clock::now();
+            start = std::chrono::steady_clock::now();
         }
         hipLaunchKernelGGL(HIP_KERNEL_NAME(adjacent_difference_kernel<config, InPlace, Right>),
                            dim3(current_blocks),

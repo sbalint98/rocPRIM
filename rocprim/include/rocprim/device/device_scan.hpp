@@ -159,7 +159,7 @@ ROCPRIM_KERNEL
         std::cout << name << "(" << size << ")"; \
         auto error = hipStreamSynchronize(stream); \
         if(error != hipSuccess) return error; \
-        auto end = std::chrono::high_resolution_clock::now(); \
+        auto end = std::chrono::steady_clock::now(); \
         auto d = std::chrono::duration_cast<std::chrono::duration<double>>(end - start); \
         std::cout << " " << d.count() * 1000 << " ms" << '\n'; \
     }
@@ -173,7 +173,7 @@ ROCPRIM_KERNEL
             std::cout << name << "(" << size << ")"; \
             auto __error = hipStreamSynchronize(stream); \
             if(__error != hipSuccess) return __error; \
-            auto _end = std::chrono::high_resolution_clock::now(); \
+            auto _end = std::chrono::steady_clock::now(); \
             auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
             std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
         } \
@@ -250,7 +250,7 @@ inline auto scan_impl(void*               temporary_storage,
     }
 
     // Start point for time measurements
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::steady_clock::time_point start;
 
     if( number_of_blocks == 0u )
         return hipSuccess;
@@ -292,7 +292,7 @@ inline auto scan_impl(void*               temporary_storage,
             }
         };
 
-        if(debug_synchronous) start = std::chrono::high_resolution_clock::now();
+        if(debug_synchronous) start = std::chrono::steady_clock::now();
 
         size_t number_of_launch = (size + limited_size - 1)/limited_size;
         for (size_t i = 0, offset = 0; i < number_of_launch; i++, offset+=limited_size )
@@ -325,7 +325,7 @@ inline auto scan_impl(void*               temporary_storage,
                                                         number_of_blocks,
                                                         start)
 
-            if(debug_synchronous) start = std::chrono::high_resolution_clock::now();
+            if(debug_synchronous) start = std::chrono::steady_clock::now();
             grid_size = number_of_blocks;
 
             if(debug_synchronous)
@@ -384,7 +384,7 @@ inline auto scan_impl(void*               temporary_storage,
             std::cout << "block_size " << block_size << '\n';
             std::cout << "number of blocks " << number_of_blocks << '\n';
             std::cout << "items_per_block " << items_per_block << '\n';
-            start = std::chrono::high_resolution_clock::now();
+            start = std::chrono::steady_clock::now();
         }
 
         single_scan_kernel<Exclusive, // flag for exclusive scan operation

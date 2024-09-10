@@ -70,7 +70,7 @@ ROCPRIM_KERNEL
         std::cout << name << "(" << size << ")"; \
         auto _error = hipStreamSynchronize(stream); \
         if(_error != hipSuccess) return _error; \
-        auto _end = std::chrono::high_resolution_clock::now(); \
+        auto _end = std::chrono::steady_clock::now(); \
         auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
         std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
     }
@@ -84,7 +84,7 @@ ROCPRIM_KERNEL
             std::cout << name << "(" << size << ")"; \
             auto __error = hipStreamSynchronize(stream); \
             if(__error != hipSuccess) return __error; \
-            auto _end = std::chrono::high_resolution_clock::now(); \
+            auto _end = std::chrono::steady_clock::now(); \
             auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
             std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
         } \
@@ -168,7 +168,7 @@ hipError_t reduce_impl(void * temporary_storage,
     }
 
     // Start point for time measurements
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::steady_clock::time_point start;
 
     const auto size_limit             = params.reduce_config.size_limit;
     const auto number_of_blocks_limit = ::rocprim::max<size_t>(size_limit / items_per_block, 1);
@@ -191,7 +191,7 @@ hipError_t reduce_impl(void * temporary_storage,
             const auto current_size = std::min<size_t>(size - offset, aligned_size_limit);
             const auto current_blocks = (current_size + items_per_block - 1) / items_per_block;
 
-            if(debug_synchronous) start = std::chrono::high_resolution_clock::now();
+            if(debug_synchronous) start = std::chrono::steady_clock::now();
             hipLaunchKernelGGL(
                 HIP_KERNEL_NAME(detail::block_reduce_kernel<false, config, result_type>),
                 dim3(current_blocks),
@@ -206,7 +206,7 @@ hipError_t reduce_impl(void * temporary_storage,
             ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("block_reduce_kernel", current_size, start);
         }
 
-        if(debug_synchronous) start = std::chrono::high_resolution_clock::now();
+        if(debug_synchronous) start = std::chrono::steady_clock::now();
         auto error = reduce_impl<WithInitialValue, Config>(nested_temp_storage,
                                                            nested_temp_storage_size,
                                                            block_prefixes, // input
@@ -221,7 +221,7 @@ hipError_t reduce_impl(void * temporary_storage,
     }
     else
     {
-        if(debug_synchronous) start = std::chrono::high_resolution_clock::now();
+        if(debug_synchronous) start = std::chrono::steady_clock::now();
         hipLaunchKernelGGL(
             HIP_KERNEL_NAME(detail::block_reduce_kernel<WithInitialValue, config, result_type>),
             dim3(1), dim3(block_size), 0, stream,

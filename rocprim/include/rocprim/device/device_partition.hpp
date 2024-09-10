@@ -95,7 +95,7 @@ ROCPRIM_KERNEL
         std::cout << name << "(" << size << ")"; \
         auto error = hipStreamSynchronize(stream); \
         if(error != hipSuccess) return error; \
-        auto end = std::chrono::high_resolution_clock::now(); \
+        auto end = std::chrono::steady_clock::now(); \
         auto d = std::chrono::duration_cast<std::chrono::duration<double>>(end - start); \
         std::cout << " " << d.count() * 1000 << " ms" << '\n'; \
     }
@@ -109,7 +109,7 @@ ROCPRIM_KERNEL
             std::cout << name << "(" << size << ")"; \
             auto __error = hipStreamSynchronize(stream); \
             if(__error != hipSuccess) return __error; \
-            auto _end = std::chrono::high_resolution_clock::now(); \
+            auto _end = std::chrono::steady_clock::now(); \
             auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
             std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
         } \
@@ -216,7 +216,7 @@ inline hipError_t partition_impl(void*                       temporary_storage,
     }
 
     // Start point for time measurements
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::steady_clock::time_point start;
 
     bool use_sleep;
     result = is_sleep_scan_state_used(stream, use_sleep);
@@ -296,7 +296,7 @@ inline hipError_t partition_impl(void*                       temporary_storage,
             std::cout << "current size " << current_size << '\n';
             std::cout << "current number of blocks " << current_number_of_blocks << '\n';
 
-            start = std::chrono::high_resolution_clock::now();
+            start = std::chrono::steady_clock::now();
         }
 
         with_scan_state(
@@ -313,7 +313,7 @@ inline hipError_t partition_impl(void*                       temporary_storage,
                                                     current_number_of_blocks,
                                                     start)
 
-        if(debug_synchronous) start = std::chrono::high_resolution_clock::now();
+        if(debug_synchronous) start = std::chrono::steady_clock::now();
 
         with_scan_state(
             [&](const auto scan_state)

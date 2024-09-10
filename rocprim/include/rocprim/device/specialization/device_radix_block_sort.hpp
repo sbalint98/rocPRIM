@@ -40,7 +40,7 @@ namespace detail
             auto __error = hipStreamSynchronize(stream);                                         \
             if(__error != hipSuccess)                                                            \
                 return __error;                                                                  \
-            auto _end = std::chrono::high_resolution_clock::now();                               \
+            auto _end = std::chrono::steady_clock::now();                               \
             auto _d   = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
             std::cout << " " << _d.count() * 1000 << " ms" << '\n';                              \
         }                                                                                        \
@@ -123,10 +123,10 @@ inline hipError_t radix_sort_block_sort(KeysInputIterator    keys_input,
     }
 
     // Start point for time measurements
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::steady_clock::time_point start;
     if(debug_synchronous)
     {
-        start = std::chrono::high_resolution_clock::now();
+        start = std::chrono::steady_clock::now();
     }
 
     radix_sort_block_sort_kernel<config, Descending>

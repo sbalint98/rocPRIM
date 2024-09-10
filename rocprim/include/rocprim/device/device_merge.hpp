@@ -103,7 +103,7 @@ void merge_kernel(IndexIterator index,
             std::cout << name << "(" << size << ")"; \
             auto __error = hipStreamSynchronize(stream); \
             if(__error != hipSuccess) return __error; \
-            auto _end = std::chrono::high_resolution_clock::now(); \
+            auto _end = std::chrono::steady_clock::now(); \
             auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
             std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
         } \
@@ -167,7 +167,7 @@ hipError_t merge_impl(void * temporary_storage,
         return hipSuccess;
 
     // Start point for time measurements
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::steady_clock::time_point start;
 
     auto number_of_blocks = partitions;
     if(debug_synchronous)
@@ -179,7 +179,7 @@ hipError_t merge_impl(void * temporary_storage,
 
     const unsigned partition_blocks = ((partitions + 1) + half_block - 1) / half_block;
 
-    if(debug_synchronous) start = std::chrono::high_resolution_clock::now();
+    if(debug_synchronous) start = std::chrono::steady_clock::now();
     hipLaunchKernelGGL(
         HIP_KERNEL_NAME(detail::partition_kernel),
         dim3(partition_blocks), dim3(half_block), 0, stream,
@@ -188,7 +188,7 @@ hipError_t merge_impl(void * temporary_storage,
     );
     ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("partition_kernel", input1_size, start);
 
-    if(debug_synchronous) start = std::chrono::high_resolution_clock::now();
+    if(debug_synchronous) start = std::chrono::steady_clock::now();
     hipLaunchKernelGGL(
         HIP_KERNEL_NAME(detail::merge_kernel<block_size, items_per_thread>),
         dim3(number_of_blocks), dim3(block_size), 0, stream,
