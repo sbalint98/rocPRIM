@@ -39,25 +39,6 @@ BEGIN_ROCPRIM_NAMESPACE
 namespace detail
 {
 
-#define ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR(name, size, start)                           \
-    do                                                                                           \
-    {                                                                                            \
-        hipError_t _error = hipGetLastError();                                                   \
-        if(_error != hipSuccess)                                                                 \
-            return _error;                                                                       \
-        if(debug_synchronous)                                                                    \
-        {                                                                                        \
-            std::cout << name << "(" << size << ")";                                             \
-            hipError_t __error = hipStreamSynchronize(stream);                                   \
-            if(__error != hipSuccess)                                                            \
-                return __error;                                                                  \
-            auto _end = std::chrono::steady_clock::now();                                        \
-            auto _d   = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
-            std::cout << " " << _d.count() * 1000 << " ms" << '\n';                              \
-        }                                                                                        \
-    }                                                                                            \
-    while(0)
-
 ROCPRIM_KERNEL
 static void
     init_find_first_of_kernel(size_t* output, size_t size, ordered_block_id<size_t> ordered_bid)
