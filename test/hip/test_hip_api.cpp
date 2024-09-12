@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include "common_test_header.hpp"
+#include "../rocprim/test_utils_device_ptr.hpp"
 
 template<class T>
 __device__ T ax(const T a, const T x)
@@ -51,43 +52,17 @@ TEST(HIPTests, Saxpy)
     std::vector<float> x(N, 2.0f);
     std::vector<float> y(N, 1.0f);
 
-    float * d_x;
-    float * d_y;
-    HIP_CHECK(test_common_utils::hipMallocHelper(&d_x, N * sizeof(float)));
-    HIP_CHECK(test_common_utils::hipMallocHelper(&d_y, N * sizeof(float)));
-    HIP_CHECK(
-        hipMemcpy(
-            d_x, x.data(),
-            N * sizeof(float),
-            hipMemcpyHostToDevice
-        )
-    );
-    HIP_CHECK(
-        hipMemcpy(
-            d_y, y.data(),
-            N * sizeof(float),
-            hipMemcpyHostToDevice
-        )
-    );
-    HIP_CHECK(hipDeviceSynchronize());
+    test_utils::device_ptr<float> d_x(x);
+    test_utils::device_ptr<float> d_y(y);
 
     hipLaunchKernelGGL(
         HIP_KERNEL_NAME(saxpy_kernel<float>),
         dim3((N + 255)/256), dim3(256), 0, 0,
-        d_x, d_y, a, N
+        d_x.get(), d_y.get(), a, N
     );
     HIP_CHECK(hipGetLastError());
 
-    HIP_CHECK(
-        hipMemcpy(
-            y.data(), d_y,
-            N * sizeof(float),
-            hipMemcpyDeviceToHost
-        )
-    );
-    HIP_CHECK(hipDeviceSynchronize());
-    HIP_CHECK(hipFree(d_x));
-    HIP_CHECK(hipFree(d_y));
+    y = d_y.load();
 
     for(size_t i = 0; i < N; i++)
     {
