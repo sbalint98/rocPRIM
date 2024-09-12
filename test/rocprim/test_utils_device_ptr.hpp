@@ -41,7 +41,7 @@ public:
     using value_type =
         typename std::conditional_t<std::is_same<decay_type, void>::value, unsigned char, _Tp>;
 
-    device_ptr() : deivce_raw_ptr_(nullptr), number_of_ele_(0) {};
+    device_ptr() : deivce_raw_ptr_(nullptr), number_of_ele_(0){};
 
     /// \brief Construct with a pre-allocated memory space.
     device_ptr(size_type pre_alloc_number_of_ele)
@@ -127,7 +127,7 @@ public:
         leak();
         return {ret_deivce_raw_ptr_, ret_number_of_ele_};
     }
-    
+
     /// \brief Get the device raw pointer
     value_type* get() const noexcept
     {
