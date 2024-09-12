@@ -58,19 +58,19 @@ struct load_helper
 
     template<typename InputIterator>
     ROCPRIM_DEVICE
-    void load_input_values(InputIterator      tile_input,
-                           const bool         is_last_tile,
-                           const unsigned int valid_in_last_tile,
+    void load_input_values(InputIterator      block_input,
+                           const bool         is_last_block,
+                           const unsigned int valid_in_last_block,
                            InputType (&input)[ItemsPerThread],
                            storage_type& storage)
     {
-        if(!is_last_tile)
+        if(!is_last_block)
         {
-            block_load_input{}.load(tile_input, input, storage.input);
+            block_load_input{}.load(block_input, input, storage.input);
         }
         else
         {
-            block_load_input{}.load(tile_input, input, valid_in_last_tile, storage.input);
+            block_load_input{}.load(block_input, input, valid_in_last_block, storage.input);
         }
         ::rocprim::syncthreads();
     }
@@ -84,25 +84,25 @@ struct discontinuity_helper
 
     template<typename InputIterator, unsigned int ItemsPerThread>
     ROCPRIM_DEVICE
-    void flag_heads_and_tails(InputIterator tile_input,
+    void flag_heads_and_tails(InputIterator block_input,
                               const InputType (&input)[ItemsPerThread],
                               unsigned int (&head_flags)[ItemsPerThread],
                               unsigned int (&tail_flags)[ItemsPerThread],
-                              const bool    is_first_tile,
-                              const bool    is_last_tile,
-                              const size_t  valid_in_last_tile,
+                              const bool    is_first_block,
+                              const bool    is_last_block,
+                              const size_t  valid_in_last_block,
                               storage_type& storage)
     {
-        if(is_last_tile)
+        if(is_last_block)
         {
-            // If it's the last tile globally, the out-of-bound items should not be flagged.
+            // If it's the last block, the out-of-bound items should not be flagged.
             auto guarded_not_equal
                 = ::rocprim::detail::guarded_inequality_wrapper<CompareFunction,
                                                                 1 /*Ret for out-of-bounds*/>(
                     CompareFunction(),
-                    valid_in_last_tile);
+                    valid_in_last_block);
 
-            if(is_first_tile)
+            if(is_first_block)
             {
                 block_discontinuity_type{}.flag_heads_and_tails(head_flags,
                                                                 tail_flags,
@@ -112,9 +112,9 @@ struct discontinuity_helper
             }
             else
             {
-                const InputType tile_predecessor = tile_input[-1];
+                const InputType block_predecessor = block_input[-1];
                 block_discontinuity_type{}.flag_heads_and_tails(head_flags,
-                                                                tile_predecessor,
+                                                                block_predecessor,
                                                                 tail_flags,
                                                                 input,
                                                                 guarded_not_equal,
@@ -126,25 +126,25 @@ struct discontinuity_helper
             auto not_equal
                 = ::rocprim::detail::inequality_wrapper<CompareFunction>(CompareFunction());
 
-            constexpr unsigned int tile_size      = BlockSize * ItemsPerThread;
-            const InputType        tile_successor = tile_input[tile_size];
+            constexpr unsigned int block_size      = BlockSize * ItemsPerThread;
+            const InputType        block_successor = block_input[block_size];
 
-            if(is_first_tile)
+            if(is_first_block)
             {
                 block_discontinuity_type{}.flag_heads_and_tails(head_flags,
                                                                 tail_flags,
-                                                                tile_successor,
+                                                                block_successor,
                                                                 input,
                                                                 not_equal,
                                                                 storage);
             }
             else
             {
-                const InputType tile_predecessor = tile_input[-1];
+                const InputType block_predecessor = block_input[-1];
                 block_discontinuity_type{}.flag_heads_and_tails(head_flags,
-                                                                tile_predecessor,
+                                                                block_predecessor,
                                                                 tail_flags,
-                                                                tile_successor,
+                                                                block_successor,
                                                                 input,
                                                                 not_equal,
                                                                 storage);
@@ -153,7 +153,7 @@ struct discontinuity_helper
     }
 };
 
-/// warp_exchange class with extra check in scatter_to_striped for out-of-bound accesses.
+/// Custom warp_exchange class with extra check in scatter_to_striped for out-of-bound accesses.
 template<class T,
          unsigned int ItemsPerThread,
          unsigned int WarpSize = ::rocprim::device_warp_size()>
@@ -189,6 +189,7 @@ public:
     /// Values in \p ranks that exceed \p WarpSize*ItemsPerThread-1 are not orderer nor written
     /// to output.
     /// \tparam U - [inferred] the output type.
+    /// \tparam OffsetT - [inferred] the offset type.
     ///
     /// \param [in] input - array that data is loaded from.
     /// \param [out] output - array that data is loaded to.
@@ -244,26 +245,26 @@ struct scatter_helper
     void scatter(const OffsetCountPairType (&offsets_and_counts)[ItemsPerThread],
                  OffsetsOutputIterator offsets_output,
                  CountsOutputIterator  counts_output,
-                 size_t                tile_num_runs_aggregate,
-                 size_t                tile_num_runs_exclusive_in_global,
+                 size_t                block_num_runs_aggregate,
+                 size_t                block_num_runs_exclusive_in_global,
                  size_t                warp_num_runs_aggregate,
-                 size_t                warp_num_runs_exclusive_in_tile,
+                 size_t                warp_num_runs_exclusive_in_block,
                  const size_t (&thread_num_runs_exclusive_in_warp)[ItemsPerThread],
                  offsets_storage_type& offsets_storage,
                  counts_storage_type&  counts_storage)
     {
         // Direct scatter
-        if((ItemsPerThread == 1) || (tile_num_runs_aggregate < BlockSize))
+        if((ItemsPerThread == 1) || (block_num_runs_aggregate < BlockSize))
         {
-            // If the warp has any non-trivial run start
+            // If the warp has any non-trivial run start, scatter
             if(warp_num_runs_aggregate)
             {
                 for(unsigned int i = 0; i < ItemsPerThread; ++i)
                 {
                     if(thread_num_runs_exclusive_in_warp[i] < warp_num_runs_aggregate)
                     {
-                        size_t item_offset = tile_num_runs_exclusive_in_global
-                                             + warp_num_runs_exclusive_in_tile
+                        size_t item_offset = block_num_runs_exclusive_in_global
+                                             + warp_num_runs_exclusive_in_block
                                              + thread_num_runs_exclusive_in_warp[i];
 
                         // Scatter offset
@@ -310,19 +311,22 @@ struct scatter_helper
 
             ::rocprim::syncthreads();
 
+            // Each thread t in the warp scatters the valid runs with index (i * warp_size + t), for
+            // i in [0, ItemsPerThread-1]. That is, consecutive threads scatter consecutive non-trivial
+            // runs output values.
             for(unsigned int i = 0; i < ItemsPerThread; ++i)
             {
-                // warp_num_runs_aggregate - number of non-trivial runs starts in current warp
                 if((i * WarpSize) + lane_id < warp_num_runs_aggregate)
                 {
-                    size_t item_offset = tile_num_runs_exclusive_in_global
-                                         + warp_num_runs_exclusive_in_tile + (i * WarpSize)
+                    size_t item_offset = block_num_runs_exclusive_in_global
+                                         + warp_num_runs_exclusive_in_block + (i * WarpSize)
                                          + lane_id;
 
                     // Scatter offset
                     offsets_output[item_offset] = run_offsets[i];
 
-                    // Scatter length if not the first (global) length
+                    // Scatter length if the scattered offset above was not for the first
+                    // (global) non-trivial run
                     if((i != 0) || (item_offset > 0))
                     {
                         counts_output[item_offset - 1] = run_counts[i];
@@ -342,9 +346,9 @@ struct scan_helper
     template<unsigned int ItemsPerThread, typename ScanOp>
     ROCPRIM_DEVICE
     void scan(OffsetCountPairType (&offsets_and_run_items)[ItemsPerThread],
-              OffsetCountPairType& tile_aggregate,
+              OffsetCountPairType& block_aggregate,
               OffsetCountPairType& warp_aggregate,
-              OffsetCountPairType& warp_exclusive_in_tile,
+              OffsetCountPairType& warp_exclusive_in_block,
               OffsetCountPairType& thread_exclusive_in_warp,
               ScanOp               scan_op,
               warp_scan_storage_type (&warp_scan_storage)[WarpsNo],
@@ -353,7 +357,6 @@ struct scan_helper
         const unsigned int warp_id = ::rocprim::warp_id();
         const unsigned int lane_id = ::rocprim::detail::logical_lane_id<WarpSize>();
 
-        // should be the partial state of last launch for the first tile of the second launch
         OffsetCountPairType init;
         ::rocprim::get<0>(init) = 0;
         ::rocprim::get<1>(init) = 0;
@@ -387,19 +390,19 @@ struct scan_helper
 
         ::rocprim::syncthreads();
 
-        warp_exclusive_in_tile = init;
-        warp_aggregate         = warp_aggregates_storage[warp_id];
+        warp_exclusive_in_block = init;
+        warp_aggregate          = warp_aggregates_storage[warp_id];
 
-        tile_aggregate = warp_aggregates_storage[0];
+        block_aggregate = warp_aggregates_storage[0];
         for(unsigned int i = 1; i < WarpsNo; ++i)
         {
-            // The aggregate from previous warps is the partial value of tile_aggregate.
+            // The aggregate from previous warps is the partial value of block_aggregate.
             if(warp_id == i)
             {
-                warp_exclusive_in_tile = tile_aggregate;
+                warp_exclusive_in_block = block_aggregate;
             }
-            // Update tile_aggregate by adding up the warp_aggregate of warp i.
-            tile_aggregate = scan_op(tile_aggregate, warp_aggregates_storage[i]);
+            // Update block_aggregate by adding up the warp_aggregate of warp i.
+            block_aggregate = scan_op(block_aggregate, warp_aggregates_storage[i]);
         }
 
         // Ensure all threads have read warp aggregates before the storage is repurposed in the
@@ -416,7 +419,7 @@ template<typename InputType,
          unsigned int         ItemsPerThread,
          block_load_method    load_input_method,
          block_scan_algorithm scan_algorithm>
-class tile_helper
+class block_helper
 {
 private:
     using equal_op          = ::rocprim::equal_to<InputType>;
@@ -459,7 +462,7 @@ public:
     {
         typename load_type::storage_type load;
 
-        OffsetCountPairType tile_exclusive;
+        OffsetCountPairType block_exclusive;
 
         struct
         {
@@ -487,51 +490,50 @@ public:
              typename CountsOutputIterator,
              typename LookbackScanState>
     ROCPRIM_DEVICE ROCPRIM_FORCE_INLINE
-    OffsetCountPairType process_tile(const InputIterator   tile_input,
+    OffsetCountPairType process_block(const InputIterator   block_input,
                                      OffsetsOutputIterator offsets_output,
                                      CountsOutputIterator  counts_output,
                                      LookbackScanState     scan_state,
-                                     const unsigned int    tile_id,
-                                     const std::size_t     number_of_tiles,
+                                     const unsigned int    block_id,
+                                     const std::size_t     grid_size,
                                      const std::size_t     size,
                                      storage_type_&        storage_)
     {
         storage_type& storage = storage_.get();
 
-        static constexpr unsigned int items_per_tile = BlockSize * ItemsPerThread;
-        const std::size_t             tile_offset    = tile_id * items_per_tile;
+        static constexpr unsigned int items_per_block = BlockSize * ItemsPerThread;
+        const std::size_t             block_offset    = block_id * items_per_block;
 
-        // First and last tiles
-        const bool is_first_tile = tile_id == 0;
-        const bool is_last_tile  = tile_id == number_of_tiles - 1;
+        // First and last blocks
+        const bool is_first_block = block_id == 0;
+        const bool is_last_block  = block_id == grid_size - 1;
 
-        // Input items remaining in last tile
-        const unsigned int valid_in_last_tile
-            = static_cast<unsigned int>(size - ((number_of_tiles - 1) * items_per_tile));
+        // Input items remaining in last block
+        const unsigned int valid_in_last_block
+            = static_cast<unsigned int>(size - ((grid_size - 1) * items_per_block));
 
-        const unsigned int flat_thread_id = threadIdx.x;
+        const unsigned int flat_thread_id = ::rocprim::detail::block_thread_id<0>();
         unsigned int       warp_id        = ::rocprim::warp_id();
 
         InputType input[ItemsPerThread];
 
         // Load items.
-        load_type{}.load_input_values(tile_input,
-                                      is_last_tile,
-                                      valid_in_last_tile,
+        load_type{}.load_input_values(block_input,
+                                      is_last_block,
+                                      valid_in_last_block,
                                       input,
                                       storage.load);
-        ::rocprim::syncthreads(); // TODO: probably not necessary, depends on the load method
 
         // Flag items.
         unsigned int head_flags[ItemsPerThread];
         unsigned int tail_flags[ItemsPerThread];
-        discontinuity_type{}.flag_heads_and_tails(tile_input,
+        discontinuity_type{}.flag_heads_and_tails(block_input,
                                                   input,
                                                   head_flags,
                                                   tail_flags,
-                                                  is_first_tile,
-                                                  is_last_tile,
-                                                  valid_in_last_tile,
+                                                  is_first_block,
+                                                  is_last_block,
+                                                  valid_in_last_block,
                                                   storage.scan.flags);
 
         // Heads and tails are flagged, so we can identify which runs are non-trivial:
@@ -551,7 +553,7 @@ public:
 
         // [0]: number of non-trivial run starts in this block
         // [1]: number of items in the last non-trivial run of this block
-        OffsetCountPairType tile_aggregate;
+        OffsetCountPairType block_aggregate;
 
         // [0]: number of non-trivial run starts in this warp
         // [1]: number of items in the last non-trivial run of this warp
@@ -559,7 +561,7 @@ public:
 
         // [0]: number of non-trivial run starts in previous warps from this block
         // [1]: number of items in the last non-trivial run in previous warps from this block
-        OffsetCountPairType warp_exclusive_in_tile;
+        OffsetCountPairType warp_exclusive_in_block;
 
         // [0]: number of non-trivial run starts in previous threads from this warp
         // [1]: number of items in the last non-trivial run in previous threads from this warp
@@ -587,9 +589,9 @@ public:
 
         // Warp scan.
         warp_scan_type{}.scan(offsets_and_run_items,
-                              tile_aggregate,
+                              block_aggregate,
                               warp_aggregate,
-                              warp_exclusive_in_tile,
+                              warp_exclusive_in_block,
                               thread_exclusive_in_warp,
                               scan_op,
                               storage.scan.warp_scan,
@@ -600,15 +602,15 @@ public:
         // - the pair (thread_exclusive_in_warp) with
         //      1. the number of non-trivial runs starts in previous threads of the warp
         //      2. the length of the last non-trivial run in previous threads of the warp
-        // - the pair (warp_exclusive_in_tile) with
-        //      1. the number of non-trivial runs starts in previous warps of the tile
-        //      2. the length of the last non-trivial run in previous warps of the tile
+        // - the pair (warp_exclusive_in_block) with
+        //      1. the number of non-trivial runs starts in previous warps of the block
+        //      2. the length of the last non-trivial run in previous warps of the block
         // - the pair (warp_aggregate) with
         //      1. the number of non-trivial runs starts in this warp
         //      2. the length of the last non-trivial run in this warp
-        // - the pair (tile_aggregate) with
-        //      1. the number of non-trivial runs starts in this tile
-        //      2. the length of the last non-trivial run in this tile
+        // - the pair (block_aggregate) with
+        //      1. the number of non-trivial runs starts in this block
+        //      2. the length of the last non-trivial run in this block
 
         OffsetCountPairType offsets_and_run_items_output[ItemsPerThread];
         OffsetCountPairType offsets_and_counts[ItemsPerThread];
@@ -617,26 +619,26 @@ public:
         // Number of non-trivial run starts in previous threads from this warp
         size_t thread_num_runs_exclusive_in_warp[ItemsPerThread];
 
-        size_t tile_num_runs_aggregate;
-        size_t tile_num_runs_exclusive_in_global;
+        size_t block_num_runs_aggregate;
+        size_t block_num_runs_exclusive_in_global;
         size_t warp_num_runs_aggregate;
-        size_t warp_num_runs_exclusive_in_tile;
+        size_t warp_num_runs_exclusive_in_block;
 
-        if(is_first_tile)
+        if(is_first_block)
         {
-            // Update tile status if this is not the last tile
-            if(!is_last_tile && (flat_thread_id == 0))
+            // Update block status if this is not the last (and only) block
+            if(!is_last_block && (flat_thread_id == 0))
             {
-                scan_state.set_complete(0, tile_aggregate);
+                scan_state.set_complete(0, block_aggregate);
             }
 
             // If there are no non-trivial runs starts in the previous warp threads, then
             // `thread_exclusive_in_warp<1>` denotes the number of items in the last
-            // non-trivial run of the previous tile threads
+            // non-trivial run of the previous block threads
             if(::rocprim::get<0>(thread_exclusive_in_warp) == 0)
             {
                 ::rocprim::get<1>(thread_exclusive_in_warp)
-                    += ::rocprim::get<1>(warp_exclusive_in_tile);
+                    += ::rocprim::get<1>(warp_exclusive_in_block);
             }
 
             // Update offsets_and_run_items with the non-trivial runs from previous threads
@@ -647,61 +649,62 @@ public:
                                   thread_exclusive_in_warp /*initial_value*/);
 
             // Compute the offsets of the non-trivial runs.
-            // If there was a run that started in a previous tile, there will be no run start
+            // If there was a run that started in a previous block, there will be no run start
             // flagged for it. Instead, either its length will be scattered when scattering the
             // offset of the next non-trivial run or it is the last non-trivial run and its
-            // length will be stored when finishing processing the last tile.
+            // length will be stored when finishing processing the last block.
             for(unsigned int i = 0; i < ItemsPerThread; ++i)
             {
                 ::rocprim::get<0>(offsets_and_counts[i])
-                    = tile_offset + (flat_thread_id * ItemsPerThread) + i; // offset of run
+                    = block_offset + (flat_thread_id * ItemsPerThread) + i; // offset of run
                 ::rocprim::get<1>(offsets_and_counts[i])
                     = ::rocprim::get<1>(offsets_and_run_items_output[i]); // length of run
                 thread_num_runs_exclusive_in_warp[i]
                     = (::rocprim::get<0>(
-                          offsets_and_run_items[i])) // if there was a non-trivial run start
-                          ? ::rocprim::get<0>(offsets_and_run_items_output[i]) // keep offset
+                          offsets_and_run_items
+                              [i])) // if there was a non-trivial run start keep offset
+                          ? ::rocprim::get<0>(offsets_and_run_items_output[i])
                           : warp_size * ItemsPerThread; // else, discard offset
             }
 
-            tile_num_runs_aggregate           = ::rocprim::get<0>(tile_aggregate);
-            tile_num_runs_exclusive_in_global = 0;
-            warp_num_runs_aggregate           = ::rocprim::get<0>(warp_aggregate);
-            warp_num_runs_exclusive_in_tile   = ::rocprim::get<0>(warp_exclusive_in_tile);
+            block_num_runs_aggregate           = ::rocprim::get<0>(block_aggregate);
+            block_num_runs_exclusive_in_global = 0;
+            warp_num_runs_aggregate            = ::rocprim::get<0>(warp_aggregate);
+            warp_num_runs_exclusive_in_block   = ::rocprim::get<0>(warp_exclusive_in_block);
 
-            // Return running total inclusive of this tile (this is the first tile so there is no)
-            reduction = tile_aggregate;
+            // Return running total inclusive of this block
+            reduction = block_aggregate;
         }
         else
         {
             auto lookback_op = detail::lookback_scan_prefix_op<OffsetCountPairType,
                                                                decltype(scan_op),
-                                                               decltype(scan_state)>{tile_id,
+                                                               decltype(scan_state)>{block_id,
                                                                                      scan_op,
                                                                                      scan_state};
 
             auto offset_lookback_op = prefix_op_factory::create(lookback_op, storage.scan.prefix);
 
-            // First warp of the tile computes the tile prefix in lane 0
+            // First warp of the block computes the block prefix in lane 0
             if(warp_id == 0)
             {
-                // 1. Set tile_aggregate as partial prefix for next block
+                // 1. Set block_aggregate as partial prefix for next block
                 // 2. Get prefix from previous block
-                // 3. Set scan_op(prefix, tile_aggregate) as complete (inclusive) prefix for next block
-                // 4. Store block_reduction (tile_aggregate) and prefix (exclusive prefix)
-                offset_lookback_op(tile_aggregate);
+                // 3. Set scan_op(prefix, block_aggregate) as complete (inclusive) prefix for next block
+                // 4. Store block_reduction (block_aggregate) and prefix (exclusive prefix)
+                offset_lookback_op(block_aggregate);
 
                 if(flat_thread_id == 0)
                 {
-                    storage.tile_exclusive = prefix_op_factory::get_prefix(storage.scan.prefix);
+                    storage.block_exclusive = prefix_op_factory::get_prefix(storage.scan.prefix);
                 }
             }
 
             ::rocprim::syncthreads();
 
-            OffsetCountPairType tile_exclusive_in_global = storage.tile_exclusive;
+            OffsetCountPairType block_exclusive_in_global = storage.block_exclusive;
             OffsetCountPairType thread_exclusive
-                = scan_op(tile_exclusive_in_global, warp_exclusive_in_tile);
+                = scan_op(block_exclusive_in_global, warp_exclusive_in_block);
 
             // If there are no non-trivial runs starts in the previous warp threads, then
             // `thread_exclusive_in_warp<1>` denotes the number of items in the last
@@ -720,7 +723,7 @@ public:
             for(unsigned int i = 0; i < ItemsPerThread; ++i)
             {
                 ::rocprim::get<0>(offsets_and_counts[i])
-                    = tile_offset + (flat_thread_id * ItemsPerThread) + i; // offset of run
+                    = block_offset + (flat_thread_id * ItemsPerThread) + i; // offset of run
                 ::rocprim::get<1>(offsets_and_counts[i])
                     = ::rocprim::get<1>(offsets_and_run_items_output[i]); // length of last run
                 thread_num_runs_exclusive_in_warp[i]
@@ -730,28 +733,28 @@ public:
                           : warp_size * ItemsPerThread; // else, discard offset
             }
 
-            tile_num_runs_aggregate           = ::rocprim::get<0>(tile_aggregate);
-            tile_num_runs_exclusive_in_global = ::rocprim::get<0>(tile_exclusive_in_global);
-            warp_num_runs_aggregate           = ::rocprim::get<0>(warp_aggregate);
-            warp_num_runs_exclusive_in_tile   = ::rocprim::get<0>(warp_exclusive_in_tile);
+            block_num_runs_aggregate           = ::rocprim::get<0>(block_aggregate);
+            block_num_runs_exclusive_in_global = ::rocprim::get<0>(block_exclusive_in_global);
+            warp_num_runs_aggregate            = ::rocprim::get<0>(warp_aggregate);
+            warp_num_runs_exclusive_in_block   = ::rocprim::get<0>(warp_exclusive_in_block);
 
-            // Return running total (inclusive of this tile)
-            reduction = scan_state.get_complete_value(tile_id);
+            // Return running total (inclusive of this block)
+            reduction = scan_state.get_complete_value(block_id);
         }
 
         // Scatter
         warp_scatter_type{}.scatter(offsets_and_counts,
                                     offsets_output,
                                     counts_output,
-                                    tile_num_runs_aggregate,
-                                    tile_num_runs_exclusive_in_global,
+                                    block_num_runs_aggregate,
+                                    block_num_runs_exclusive_in_global,
                                     warp_num_runs_aggregate,
-                                    warp_num_runs_exclusive_in_tile,
+                                    warp_num_runs_exclusive_in_block,
                                     thread_num_runs_exclusive_in_warp,
                                     storage.scatter.scatter_offsets[warp_id],
                                     storage.scatter.scatter_counts[warp_id]);
 
-        // Return running total (inclusive of this tile)
+        // Return running total (inclusive of this block)
         return reduction;
     }
 };
@@ -769,84 +772,74 @@ void non_trivial_kernel_impl(InputIterator                  input,
                              const CountsOutputIterator     counts_output,
                              const RunsCountOutputIterator  runs_count_output,
                              const LookbackScanState        scan_state,
-                             ordered_block_id<unsigned int> ordered_tile_id,
-                             const std::size_t              number_of_tiles,
+                             ordered_block_id<unsigned int> ordered_block_id,
+                             const std::size_t              grid_size,
                              const std::size_t              size)
 {
     static constexpr non_trivial_runs_config_params params     = device_params<Config>();
     static constexpr unsigned int                   block_size = params.kernel_config.block_size;
     static constexpr unsigned int         items_per_thread  = params.kernel_config.items_per_thread;
-    static constexpr unsigned int         tiles_per_block   = params.tiles_per_block;
     static constexpr block_load_method    load_input_method = params.load_input_method;
     static constexpr block_scan_algorithm scan_algorithm    = params.scan_algorithm;
-    static constexpr unsigned int         items_per_tile    = block_size * items_per_thread;
+    static constexpr unsigned int         items_per_block   = block_size * items_per_thread;
 
     using input_type  = ::rocprim::detail::value_type_t<InputIterator>;
     using offset_type = unsigned int;
     using count_type  = unsigned int;
 
-    using tile_processor = tile_helper<input_type,
-                                       offset_type,
-                                       count_type,
-                                       OffsetCountPairType,
-                                       block_size,
-                                       items_per_thread,
-                                       load_input_method,
-                                       scan_algorithm>;
+    using block_processor = block_helper<input_type,
+                                         offset_type,
+                                         count_type,
+                                         OffsetCountPairType,
+                                         block_size,
+                                         items_per_thread,
+                                         load_input_method,
+                                         scan_algorithm>;
 
     ROCPRIM_SHARED_MEMORY union
     {
-        typename decltype(ordered_tile_id)::storage_type tile_id;
-        typename tile_processor::storage_type_           tile;
+        typename decltype(ordered_block_id)::storage_type block_id;
+        typename block_processor::storage_type_           block;
     } storage;
 
-    for(unsigned int i = 0; i < tiles_per_block; ++i)
+    const std::size_t block_id = ordered_block_id.get(threadIdx.x, storage.block_id);
+
+    const std::size_t   block_offset = block_id * items_per_block;
+    const InputIterator block_input  = input + block_offset;
+
+    const size_t valid_in_last_block
+        = static_cast<size_t>(size - (size_t{grid_size - 1} * items_per_block));
+
+    if(block_id < grid_size - 1)
     {
-        ::rocprim::syncthreads();
-        const std::size_t tile_id = ordered_tile_id.get(threadIdx.x, storage.tile_id);
-        if(tile_id >= number_of_tiles)
+        block_processor{}.process_block(block_input,
+                                        offsets_output,
+                                        counts_output,
+                                        scan_state,
+                                        block_id,
+                                        grid_size,
+                                        size,
+                                        storage.block);
+    }
+    else if(valid_in_last_block > 0)
+    {
+        OffsetCountPairType total = block_processor{}.process_block(block_input,
+                                                                    offsets_output,
+                                                                    counts_output,
+                                                                    scan_state,
+                                                                    block_id,
+                                                                    grid_size,
+                                                                    size,
+                                                                    storage.block);
+        // First thread of last block sets the total number of non-trivial runs found and updates
+        // the counts with the last run's length if necessary.
+        if(threadIdx.x == 0)
         {
-            return;
-        }
+            *runs_count_output = ::rocprim::get<0>(total);
 
-        const std::size_t   tile_offset = tile_id * items_per_tile;
-        const InputIterator tile_input  = input + tile_offset;
-
-        const size_t valid_in_last_tile
-            = static_cast<size_t>(size - (size_t{number_of_tiles - 1} * items_per_tile));
-
-        ::rocprim::syncthreads();
-        if(tile_id < number_of_tiles - 1)
-        {
-            tile_processor{}.process_tile(tile_input,
-                                          offsets_output,
-                                          counts_output,
-                                          scan_state,
-                                          tile_id,
-                                          number_of_tiles,
-                                          size,
-                                          storage.tile);
-        }
-        else if(valid_in_last_tile > 0)
-        {
-            OffsetCountPairType total = tile_processor{}.process_tile(tile_input,
-                                                                      offsets_output,
-                                                                      counts_output,
-                                                                      scan_state,
-                                                                      tile_id,
-                                                                      number_of_tiles,
-                                                                      size,
-                                                                      storage.tile);
-            // First thread of last tile sets the total number of non-trivial runs found and updates
-            // the counts with the last run's length if necessary.
-            if(threadIdx.x == 0)
+            if(::rocprim::get<0>(total) > 0)
             {
-                *runs_count_output = ::rocprim::get<0>(total);
-
-                if(::rocprim::get<0>(total) > 0)
-                {
-                    counts_output[::rocprim::get<0>(total) - 1] = ::rocprim::get<1>(total);
-                }
+                counts_output[::rocprim::get<0>(total) - 1] = ::rocprim::get<1>(total);
             }
         }
     }

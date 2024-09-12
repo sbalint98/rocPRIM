@@ -65,8 +65,8 @@ void non_trivial_kernel(const InputIterator                  input,
                         const CountsOutputIterator           counts_output,
                         const RunsCountOutputIterator        runs_count_output,
                         const LookbackScanState              scan_state,
-                        const ordered_block_id<unsigned int> ordered_tile_id,
-                        const std::size_t                    number_of_tiles,
+                        const ordered_block_id<unsigned int> ordered_block_id,
+                        const std::size_t                    grid_size,
                         const std::size_t                    size)
 {
     run_length_encode::non_trivial_kernel_impl<Config, OffsetCountPairType>(input,
@@ -74,8 +74,8 @@ void non_trivial_kernel(const InputIterator                  input,
                                                                             counts_output,
                                                                             runs_count_output,
                                                                             scan_state,
-                                                                            ordered_tile_id,
-                                                                            number_of_tiles,
+                                                                            ordered_block_id,
+                                                                            grid_size,
                                                                             size);
 }
 
@@ -107,67 +107,47 @@ hipError_t run_length_encode_non_trivial_runs_impl(void*                   tempo
     using scan_state_with_sleep_type
         = ::rocprim::detail::lookback_scan_state<offset_count_pair_type, /*UseSleep=*/true>;
 
-    using ordered_tile_id_type = detail::ordered_block_id<unsigned int>;
+    using ordered_block_id_type = detail::ordered_block_id<unsigned int>;
 
     detail::target_arch target_arch;
-    hipError_t          result = host_target_arch(stream, target_arch);
-    if(result != hipSuccess)
-    {
-        return result;
-    }
-    const non_trivial_runs_config_params params = dispatch_target_arch<config>(target_arch);
+    RETURN_ON_ERROR(host_target_arch(stream, target_arch));
 
-    const unsigned int block_size      = params.kernel_config.block_size;
-    const unsigned int tiles_per_block = params.tiles_per_block;
-    const unsigned int items_per_tile  = block_size * params.kernel_config.items_per_thread;
-
-    // Number of tiles in a single launch (or the only launch if it fits)
-    const std::size_t number_of_tiles  = detail::ceiling_div(size, items_per_tile);
-    const std::size_t number_of_blocks = detail::ceiling_div(number_of_tiles, tiles_per_block);
+    const non_trivial_runs_config_params params     = dispatch_target_arch<config>(target_arch);
+    const unsigned int                   block_size = params.kernel_config.block_size;
+    const unsigned int items_per_block = block_size * params.kernel_config.items_per_thread;
+    const std::size_t  grid_size       = detail::ceiling_div(size, items_per_block);
 
     // Calculate required temporary storage
-    void*                          scan_state_storage;
-    ordered_tile_id_type::id_type* ordered_bid_storage;
+    void*                           scan_state_storage;
+    ordered_block_id_type::id_type* ordered_bid_storage;
 
     detail::temp_storage::layout layout{};
-    result = scan_state_type::get_temp_storage_layout(number_of_tiles, stream, layout);
-    if(result != hipSuccess)
-    {
-        return result;
-    }
+    RETURN_ON_ERROR(scan_state_type::get_temp_storage_layout(grid_size, stream, layout));
 
-    result = detail::temp_storage::partition(
+    hipError_t result = detail::temp_storage::partition(
         temporary_storage,
         storage_size,
         detail::temp_storage::make_linear_partition(
             // This is valid even with scan_state_with_sleep_type
             detail::temp_storage::make_partition(&scan_state_storage, layout),
-            detail::temp_storage::make_partition(&ordered_bid_storage,
-                                                 ordered_tile_id_type::get_temp_storage_layout())));
+            detail::temp_storage::make_partition(
+                &ordered_bid_storage,
+                ordered_block_id_type::get_temp_storage_layout())));
     if(result != hipSuccess || temporary_storage == nullptr)
     {
         return result;
     }
 
     bool use_sleep;
-    result = detail::is_sleep_scan_state_used(stream, use_sleep);
-    if(result != hipSuccess)
-    {
-        return result;
-    }
+    RETURN_ON_ERROR(detail::is_sleep_scan_state_used(stream, use_sleep));
 
-    scan_state_type scan_state{};
-    result = scan_state_type::create(scan_state, scan_state_storage, number_of_tiles, stream);
+    scan_state_type            scan_state{};
     scan_state_with_sleep_type scan_state_with_sleep{};
-    result = scan_state_with_sleep_type::create(scan_state_with_sleep,
-                                                scan_state_storage,
-                                                number_of_tiles,
-                                                stream);
-
-    if(result != hipSuccess)
-    {
-        return result;
-    }
+    RETURN_ON_ERROR(scan_state_type::create(scan_state, scan_state_storage, grid_size, stream));
+    RETURN_ON_ERROR(scan_state_with_sleep_type::create(scan_state_with_sleep,
+                                                       scan_state_storage,
+                                                       grid_size,
+                                                       stream));
 
     auto with_scan_state
         = [use_sleep, scan_state, scan_state_with_sleep](auto&& func) mutable -> decltype(auto)
@@ -182,7 +162,7 @@ hipError_t run_length_encode_non_trivial_runs_impl(void*                   tempo
         }
     };
 
-    auto ordered_bid = ordered_tile_id_type::create(ordered_bid_storage);
+    auto ordered_bid = ordered_block_id_type::create(ordered_bid_storage);
 
     if(size == 0)
     {
@@ -196,34 +176,32 @@ hipError_t run_length_encode_non_trivial_runs_impl(void*                   tempo
     }
 
     // Start point for time measurements
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::steady_clock::time_point start;
     if(debug_synchronous)
     {
         std::cout << "size:               " << size << '\n';
         std::cout << "block_size:         " << block_size << '\n';
-        std::cout << "tiles_per_block:    " << tiles_per_block << '\n';
-        std::cout << "number_of_tiles:    " << number_of_tiles << '\n';
-        std::cout << "number_of_blocks:   " << number_of_blocks << '\n';
-        std::cout << "items_per_tile:     " << items_per_tile << '\n';
-        start = std::chrono::high_resolution_clock::now();
+        std::cout << "grid_size:          " << grid_size << '\n';
+        std::cout << "items_per_block:    " << items_per_block << '\n';
+        start = std::chrono::steady_clock::now();
     }
 
     with_scan_state(
         [&](const auto scan_state)
         {
-            const unsigned int block_size = ROCPRIM_DEFAULT_MAX_BLOCK_SIZE;
-            const std::size_t  grid_size  = detail::ceiling_div(number_of_tiles, block_size);
+            const unsigned int init_block_size = ROCPRIM_DEFAULT_MAX_BLOCK_SIZE;
+            const std::size_t  init_grid_size  = detail::ceiling_div(grid_size, init_block_size);
             hipLaunchKernelGGL(init_lookback_scan_state_kernel,
-                               dim3(grid_size),
-                               dim3(block_size),
+                               dim3(init_grid_size),
+                               dim3(init_block_size),
                                0,
                                stream,
                                scan_state,
-                               number_of_tiles,
+                               grid_size,
                                ordered_bid);
         });
     ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("init_lookback_scan_state_kernel",
-                                                number_of_tiles,
+                                                grid_size,
                                                 start);
 
     with_scan_state(
@@ -232,7 +210,7 @@ hipError_t run_length_encode_non_trivial_runs_impl(void*                   tempo
             hipLaunchKernelGGL(
                 HIP_KERNEL_NAME(
                     run_length_encode::non_trivial_kernel<config, offset_count_pair_type>),
-                dim3(number_of_blocks),
+                dim3(grid_size),
                 dim3(block_size),
                 0,
                 stream,
@@ -242,17 +220,17 @@ hipError_t run_length_encode_non_trivial_runs_impl(void*                   tempo
                 runs_count_output,
                 scan_state,
                 ordered_bid,
-                number_of_tiles,
+                grid_size,
                 size);
         });
-    ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("run_length_encode_non_trivial_runs kernel",
+    ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("run_length_encode::non_trivial_kernel",
                                                 size,
                                                 start);
 
     return hipSuccess;
 }
 } // namespace run_length_encode
-} // end detail namespace
+} // namespace detail
 
 /// \brief Parallel run-length encoding for device level.
 ///
@@ -333,23 +311,20 @@ hipError_t run_length_encode_non_trivial_runs_impl(void*                   tempo
 /// // runs_count_output: [4]
 /// \endcode
 /// \endparblock
-template<
-    class Config = default_config,
-    class InputIterator,
-    class UniqueOutputIterator,
-    class CountsOutputIterator,
-    class RunsCountOutputIterator
->
-inline
-hipError_t run_length_encode(void * temporary_storage,
-                             size_t& storage_size,
-                             InputIterator input,
-                             unsigned int size,
-                             UniqueOutputIterator unique_output,
-                             CountsOutputIterator counts_output,
-                             RunsCountOutputIterator runs_count_output,
-                             hipStream_t stream = 0,
-                             bool debug_synchronous = false)
+template<class Config = default_config,
+         class InputIterator,
+         class UniqueOutputIterator,
+         class CountsOutputIterator,
+         class RunsCountOutputIterator>
+inline hipError_t run_length_encode(void*                   temporary_storage,
+                                    size_t&                 storage_size,
+                                    InputIterator           input,
+                                    unsigned int            size,
+                                    UniqueOutputIterator    unique_output,
+                                    CountsOutputIterator    counts_output,
+                                    RunsCountOutputIterator runs_count_output,
+                                    hipStream_t             stream            = 0,
+                                    bool                    debug_synchronous = false)
 {
     using input_type = typename std::iterator_traits<InputIterator>::value_type;
     using count_type = unsigned int;
@@ -363,12 +338,18 @@ hipError_t run_length_encode(void * temporary_storage,
             default_config>>;
 
     return ::rocprim::reduce_by_key<typename config::reduce_by_key>(
-        temporary_storage, storage_size,
-        input, make_constant_iterator<count_type>(1), size,
-        unique_output, counts_output, runs_count_output,
-        ::rocprim::plus<count_type>(), ::rocprim::equal_to<input_type>(),
-        stream, debug_synchronous
-    );
+        temporary_storage,
+        storage_size,
+        input,
+        make_constant_iterator<count_type>(1),
+        size,
+        unique_output,
+        counts_output,
+        runs_count_output,
+        ::rocprim::plus<count_type>(),
+        ::rocprim::equal_to<input_type>(),
+        stream,
+        debug_synchronous);
 }
 
 /// \brief Parallel run-length encoding of non-trivial runs for device level.
@@ -451,23 +432,20 @@ hipError_t run_length_encode(void * temporary_storage,
 /// // runs_count_output: [2]
 /// \endcode
 /// \endparblock
-template<
-    class Config = default_config,
-    class InputIterator,
-    class OffsetsOutputIterator,
-    class CountsOutputIterator,
-    class RunsCountOutputIterator
->
-inline
-hipError_t run_length_encode_non_trivial_runs(void * temporary_storage,
-                                              size_t& storage_size,
-                                              InputIterator input,
-                                              unsigned int size,
-                                              OffsetsOutputIterator offsets_output,
-                                              CountsOutputIterator counts_output,
-                                              RunsCountOutputIterator runs_count_output,
-                                              hipStream_t stream = 0,
-                                              bool debug_synchronous = false)
+template<class Config = default_config,
+         class InputIterator,
+         class OffsetsOutputIterator,
+         class CountsOutputIterator,
+         class RunsCountOutputIterator>
+inline hipError_t run_length_encode_non_trivial_runs(void*                   temporary_storage,
+                                                     size_t&                 storage_size,
+                                                     InputIterator           input,
+                                                     unsigned int            size,
+                                                     OffsetsOutputIterator   offsets_output,
+                                                     CountsOutputIterator    counts_output,
+                                                     RunsCountOutputIterator runs_count_output,
+                                                     hipStream_t             stream = 0,
+                                                     bool debug_synchronous         = false)
 {
     return detail::run_length_encode::run_length_encode_non_trivial_runs_impl<Config>(
         temporary_storage,
@@ -480,8 +458,6 @@ hipError_t run_length_encode_non_trivial_runs(void * temporary_storage,
         stream,
         debug_synchronous);
 }
-
-
 
 /// @}
 // end of group devicemodule
