@@ -38,8 +38,8 @@ class device_ptr
 public:
     using decay_type = std::decay_t<PointerType>;
     using size_type  = std::size_t;
-    using value_type =
-        typename std::conditional_t<std::is_same<decay_type, void>::value, unsigned char, PointerType>;
+    using value_type = typename std::
+        conditional_t<std::is_same<decay_type, void>::value, unsigned char, PointerType>;
 
     device_ptr() : device_raw_ptr_(nullptr), number_of_ele_(0){};
 
