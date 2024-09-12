@@ -32,56 +32,56 @@ namespace test_utils
 /// \brief An RAII friendly class to manage the memory allocated on device.
 ///
 /// \tparam A Template type used by the class.
-template<typename _Tp = void>
+template<typename PointerType = void>
 class device_ptr
 {
 public:
-    using decay_type = std::decay_t<_Tp>;
+    using decay_type = std::decay_t<PointerType>;
     using size_type  = std::size_t;
     using value_type =
-        typename std::conditional_t<std::is_same<decay_type, void>::value, unsigned char, _Tp>;
+        typename std::conditional_t<std::is_same<decay_type, void>::value, unsigned char, PointerType>;
 
-    device_ptr() : deivce_raw_ptr_(nullptr), number_of_ele_(0){};
+    device_ptr() : device_raw_ptr_(nullptr), number_of_ele_(0){};
 
     /// \brief Construct with a pre-allocated memory space.
     device_ptr(size_type pre_alloc_number_of_ele)
-        : deivce_raw_ptr_(nullptr), number_of_ele_(pre_alloc_number_of_ele)
+        : device_raw_ptr_(nullptr), number_of_ele_(pre_alloc_number_of_ele)
     {
         size_type storage_size = number_of_ele_ * sizeof(value_type);
-        HIP_CHECK(test_common_utils::hipMallocHelper(&deivce_raw_ptr_, storage_size));
+        HIP_CHECK(test_common_utils::hipMallocHelper(&device_raw_ptr_, storage_size));
     };
 
     device_ptr(device_ptr const&) = delete;
 
     device_ptr(device_ptr&& other) noexcept
-        : deivce_raw_ptr_(other.deivce_raw_ptr_), number_of_ele_(other.number_of_ele_)
+        : device_raw_ptr_(other.device_raw_ptr_), number_of_ele_(other.number_of_ele_)
     {
         other.leak();
     };
 
     /// \brief Construct by host vectors with the same sized value_type
-    template<typename vec_value_t>
-    explicit device_ptr(typename std::vector<vec_value_t> const& data)
-        : deivce_raw_ptr_(nullptr), number_of_ele_(data.size())
+    template<typename InVecValueType>
+    explicit device_ptr(std::vector<InVecValueType> const& data)
+        : device_raw_ptr_(nullptr), number_of_ele_(data.size())
     {
         static_assert(
-            sizeof(vec_value_t) == sizeof(value_type),
+            sizeof(InVecValueType) == sizeof(value_type),
             "value_type of input vector must have the same size with device_ptr::value_type");
 
         size_type storage_size = number_of_ele_ * sizeof(value_type);
-        HIP_CHECK(test_common_utils::hipMallocHelper(&deivce_raw_ptr_, storage_size));
-        HIP_CHECK(hipMemcpy(deivce_raw_ptr_, data.data(), storage_size, hipMemcpyHostToDevice));
+        HIP_CHECK(test_common_utils::hipMallocHelper(&device_raw_ptr_, storage_size));
+        HIP_CHECK(hipMemcpy(device_raw_ptr_, data.data(), storage_size, hipMemcpyHostToDevice));
     }
 
     /// \brief Construct with a copy of this `host_buffer`
     ///
     /// \param _number_of_ele be aware, this is NOT the sizeof `host_buffer`, this is the `number of elements` in the `host_buffer`
     device_ptr(const void* host_buffer, size_type _number_of_ele)
-        : deivce_raw_ptr_(nullptr), number_of_ele_(_number_of_ele)
+        : device_raw_ptr_(nullptr), number_of_ele_(_number_of_ele)
     {
         size_type storage_size = number_of_ele_ * sizeof(value_type);
-        HIP_CHECK(test_common_utils::hipMallocHelper(&deivce_raw_ptr_, storage_size));
-        HIP_CHECK(hipMemcpy(deivce_raw_ptr_, host_buffer, storage_size, hipMemcpyHostToDevice));
+        HIP_CHECK(test_common_utils::hipMallocHelper(&device_raw_ptr_, storage_size));
+        HIP_CHECK(hipMemcpy(device_raw_ptr_, host_buffer, storage_size, hipMemcpyHostToDevice));
     };
 
     ~device_ptr()
@@ -94,7 +94,7 @@ public:
     device_ptr& operator=(device_ptr&& other) noexcept
     {
         free_manually();
-        deivce_raw_ptr_ = other.deivce_raw_ptr_;
+        device_raw_ptr_ = other.device_raw_ptr_;
         number_of_ele_  = other.number_of_ele_;
         other.leak();
     };
@@ -107,22 +107,22 @@ public:
         device_ptr ret;
         ret.number_of_ele_     = number_of_ele_;
         size_type storage_size = number_of_ele_ * sizeof(value_type);
-        HIP_CHECK(test_common_utils::hipMallocHelper(&ret.deivce_raw_ptr_, storage_size));
+        HIP_CHECK(test_common_utils::hipMallocHelper(&ret.device_raw_ptr_, storage_size));
         HIP_CHECK(
-            hipMemcpy(ret.deivce_raw_ptr_, deivce_raw_ptr_, storage_size, hipMemcpyDeviceToDevice));
+            hipMemcpy(ret.device_raw_ptr_, device_raw_ptr_, storage_size, hipMemcpyDeviceToDevice));
         return ret;
     }
 
-    /// \brief Do type cast and move the ownership to the new `device_ptr<target_ptr_t>`.
+    /// \brief Do type cast and move the ownership to the new `device_ptr<TargetPtrType>`.
     ///
-    /// \return A new `device_ptr<target_ptr_t>` rvalue.
-    template<typename target_ptr_t>
-    device_ptr<target_ptr_t> move_cast() noexcept
+    /// \return A new `device_ptr<TargetPtrType>` rvalue.
+    template<typename TargetPtrType>
+    device_ptr<TargetPtrType> move_cast() noexcept
     {
-        using target_value_t = typename device_ptr<target_ptr_t>::value_type;
+        using target_value_t = typename device_ptr<TargetPtrType>::value_type;
 
         auto ret_deivce_raw_ptr_
-            = static_cast<target_value_t*>(static_cast<void*>(deivce_raw_ptr_));
+            = static_cast<target_value_t*>(static_cast<void*>(device_raw_ptr_));
         auto ret_number_of_ele_ = sizeof(value_type) * number_of_ele_ / sizeof(target_value_t);
         leak();
         return {ret_deivce_raw_ptr_, ret_number_of_ele_};
@@ -131,22 +131,22 @@ public:
     /// \brief Get the device raw pointer
     value_type* get() const noexcept
     {
-        return deivce_raw_ptr_;
+        return device_raw_ptr_;
     }
 
     /// \brief Clean every thing on this instance, which could lead to memory leak. Should call `get()` and free the raw pointer manually
     void leak() noexcept
     {
-        deivce_raw_ptr_ = nullptr;
+        device_raw_ptr_ = nullptr;
         number_of_ele_  = 0;
     }
 
     /// \brief Call this function to garbage the memory in advance
     void free_manually()
     {
-        if(deivce_raw_ptr_)
+        if(device_raw_ptr_)
         {
-            HIP_CHECK(hipFree(deivce_raw_ptr_));
+            HIP_CHECK(hipFree(device_raw_ptr_));
         }
         leak();
     }
@@ -163,11 +163,11 @@ public:
             HIP_CHECK(test_common_utils::hipMallocHelper(&device_temp_ptr,
                                                          _new_number_of_ele * sizeof(value_type)));
             HIP_CHECK(hipMemcpy(device_temp_ptr,
-                                deivce_raw_ptr_,
+                                device_raw_ptr_,
                                 std::min(_new_number_of_ele, number_of_ele_) * sizeof(value_type),
                                 hipMemcpyDeviceToDevice));
             free_manually();
-            deivce_raw_ptr_ = device_temp_ptr;
+            device_raw_ptr_ = device_temp_ptr;
             number_of_ele_  = _new_number_of_ele;
         }
     }
@@ -185,11 +185,11 @@ public:
     }
 
     /// \brief Copy from host to device
-    template<typename vec_value_t>
-    void store(typename std::vector<vec_value_t> const& host_vec, size_type offset = 0)
+    template<typename InVecValueType>
+    void store(std::vector<InVecValueType> const& host_vec, size_type offset = 0)
     {
         static_assert(
-            sizeof(vec_value_t) == sizeof(value_type),
+            sizeof(InVecValueType) == sizeof(value_type),
             "value_type of input vector must have the same size with device_ptr::value_type");
 
         if(host_vec.size() + offset > number_of_ele_)
@@ -197,26 +197,26 @@ public:
             resize(host_vec.size() + offset);
         }
 
-        HIP_CHECK(hipMemcpy(deivce_raw_ptr_ + offset,
+        HIP_CHECK(hipMemcpy(device_raw_ptr_ + offset,
                             host_vec.data(),
                             host_vec.size() * sizeof(value_type),
                             hipMemcpyHostToDevice));
     }
 
     /// \brief Copy from host to device
-    template<typename ptr_value_t>
-    void store(device_ptr<ptr_value_t> const& device_ptr, size_type offset = 0)
+    template<typename InPtrValueType>
+    void store(device_ptr<InPtrValueType> const& device_ptr, size_type offset = 0)
     {
-        static_assert(sizeof(ptr_value_t) == sizeof(value_type),
-                      "sizeof(ptr_value_t) must equal to sizeof(value_type)");
+        static_assert(sizeof(InPtrValueType) == sizeof(value_type),
+                      "sizeof(InPtrValueType) must equal to sizeof(value_type)");
 
         if(device_ptr.number_of_ele_ + offset > number_of_ele_)
         {
             resize(device_ptr.number_of_ele_ + offset);
         }
 
-        HIP_CHECK(hipMemcpy(deivce_raw_ptr_ + offset,
-                            device_ptr.deivce_raw_ptr_,
+        HIP_CHECK(hipMemcpy(device_raw_ptr_ + offset,
+                            device_ptr.device_raw_ptr_,
                             device_ptr.number_of_ele_ * sizeof(value_type),
                             hipMemcpyDeviceToDevice));
     }
@@ -226,14 +226,14 @@ public:
     {
         std::vector<value_type> ret(number_of_ele_);
         HIP_CHECK(hipMemcpy(ret.data(),
-                            deivce_raw_ptr_,
+                            device_raw_ptr_,
                             number_of_ele_ * sizeof(value_type),
                             hipMemcpyDeviceToHost));
         return ret;
     }
 
 private:
-    value_type* deivce_raw_ptr_;
+    value_type* device_raw_ptr_;
     size_type   number_of_ele_;
 };
 
