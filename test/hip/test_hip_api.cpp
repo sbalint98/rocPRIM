@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2017-2022 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2017-2024 Advanced Micro Devices, Inc. All rights reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,18 +20,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#include "common_test_header.hpp"
 #include "../rocprim/test_utils_device_ptr.hpp"
+#include "common_test_header.hpp"
 
 template<class T>
-__device__ T ax(const T a, const T x)
+__device__
+T ax(const T a, const T x)
 {
     return x * a;
 }
 
-template <class T>
+template<class T>
 __global__
-void saxpy_kernel(const T * x, T * y, const T a, const size_t size)
+void saxpy_kernel(const T* x, T* y, const T a, const size_t size)
 {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     if(i < size)
@@ -48,18 +49,22 @@ TEST(HIPTests, Saxpy)
 
     const size_t N = 100;
 
-    const float a = 100.0f;
+    const float        a = 100.0f;
     std::vector<float> x(N, 2.0f);
     std::vector<float> y(N, 1.0f);
 
     test_utils::device_ptr<float> d_x(x);
     test_utils::device_ptr<float> d_y(y);
 
-    hipLaunchKernelGGL(
-        HIP_KERNEL_NAME(saxpy_kernel<float>),
-        dim3((N + 255)/256), dim3(256), 0, 0,
-        d_x.get(), d_y.get(), a, N
-    );
+    hipLaunchKernelGGL(HIP_KERNEL_NAME(saxpy_kernel<float>),
+                       dim3((N + 255) / 256),
+                       dim3(256),
+                       0,
+                       0,
+                       d_x.get(),
+                       d_y.get(),
+                       a,
+                       N);
     HIP_CHECK(hipGetLastError());
 
     y = d_y.load();
