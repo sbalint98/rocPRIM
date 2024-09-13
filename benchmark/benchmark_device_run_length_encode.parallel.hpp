@@ -49,7 +49,8 @@ std::string non_trivial_runs_config_name()
 {
     const rocprim::detail::non_trivial_runs_config_params config = Config();
     return "{bs:" + std::to_string(config.kernel_config.block_size)
-           + ",ipt:" + std::to_string(config.kernel_config.items_per_thread) "}";
+           + ",ipt:" + std::to_string(config.kernel_config.items_per_thread)
+           + ",load_method:" + get_block_load_method_name(config.load_input_method) + "}";
 }
 
 template<>
@@ -176,6 +177,9 @@ struct device_non_trivial_runs_benchmark : public config_autotune_interface
             HIP_CHECK(hipEventRecord(stop, stream));
             HIP_CHECK(hipEventSynchronize(stop));
 
+            HIP_CHECK(hipGetLastError());
+            HIP_CHECK(hipDeviceSynchronize());
+
             float elapsed_mseconds{};
             HIP_CHECK(hipEventElapsedTime(&elapsed_mseconds, start, stop));
             state.SetIterationTime(elapsed_mseconds / 1000);
@@ -202,29 +206,51 @@ struct device_non_trivial_runs_benchmark : public config_autotune_interface
 
 #ifdef BENCHMARK_CONFIG_TUNING
 
-template<typename T, int BlockSize>
+template<typename T, int BlockSize, ::rocprim::block_load_method BlockLoadMethod>
 struct device_non_trivial_runs_benchmark_generator
 {
-    template<int ItemsPerThread>
+    using OffsetCountPairT = ::rocprim::tuple<unsigned int, unsigned int>;
+
+    static constexpr unsigned int max_shared_memory = TUNING_SHARED_MEMORY_MAX;
+    static constexpr unsigned int max_size_per_element
+        = std::max(sizeof(T), sizeof(OffsetCountPairT));
+    static constexpr unsigned int max_items_per_thread
+        = max_shared_memory / (BlockSize * max_size_per_element);
+    static constexpr unsigned int max_items_per_thread_exponent
+        = rocprim::Log2<max_items_per_thread>::VALUE - 1;
+    static constexpr unsigned int min_items_per_thread_exponent = 3u;
+
+    static constexpr bool is_load_warp_transpose
+        = BlockLoadMethod == ::rocprim::block_load_method::block_load_warp_transpose;
+    static constexpr bool is_warp_load_supp
+        = is_load_warp_transpose && BlockSize == ROCPRIM_WARP_SIZE_64;
+
+    template<int ItemsPerThreadExp>
     struct create_ipt
     {
         void operator()(std::vector<std::unique_ptr<config_autotune_interface>>& storage)
         {
-            using OffsetCountPairT = ::rocprim::tuple<unsigned int, unsigned int>;
-
-            using config = rocprim::non_trivial_runs_config<
-                BlockSize,
-                ItemsPerThread,
-                rocprim::block_load_method::block_load_transpose,
-                rocprim::block_scan_algorithm::using_warp_scan>;
-            storage.emplace_back(
-                std::make_unique<device_non_trivial_runs_benchmark<T, 0, config>>());
+            if(!is_load_warp_transpose || is_warp_load_supp)
+            {
+                using config = rocprim::non_trivial_runs_config<
+                    BlockSize,
+                    items_per_thread,
+                    BlockLoadMethod,
+                    rocprim::block_scan_algorithm::using_warp_scan>;
+                storage.emplace_back(
+                    std::make_unique<device_non_trivial_runs_benchmark<T, 0, config>>());
+            }
         }
+
+    private:
+        static constexpr unsigned int items_per_thread = 1u << ItemsPerThreadExp;
     };
 
     static void create(std::vector<std::unique_ptr<config_autotune_interface>>& storage)
     {
-        static_for_each<make_index_range<int, 4, 15>, create_ipt>(storage);
+        static_for_each<
+            make_index_range<int, min_items_per_thread_exponent, max_items_per_thread_exponent>,
+            create_ipt>(storage);
     }
 };
 

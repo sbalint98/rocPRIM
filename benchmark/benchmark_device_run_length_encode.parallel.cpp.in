@@ -29,5 +29,6 @@ namespace {
     auto benchmarks = config_autotune_register::create_bulk(
         device_non_trivial_runs_benchmark_generator<
         @KeyType@,
-        @BlockSize@>::create);
+        @BlockSize@,
+        rocprim::block_load_method::@BlockLoadMethod@>::create);
 } // namespace

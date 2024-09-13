@@ -540,7 +540,7 @@ public:
         // input  [1, 1, 1, 2, 10, 10, 10, 88]
         // heads  [1, 0, 0, 1,  1,  0,  0,  1]
         // tails  [0, 0, 1, 1,  0,  0,  1,  1]
-        // offset [1, 0, 0, 0,  1,  0,  0,  0] = head && !tail  (first items of non-trivial runs)
+        // offset [1, 0, 0, 0,  1,  0,  0,  0] =  head && !tail (first items of non-trivial runs)
         // count  [1, 1, 1, 0,  1,  1,  1,  0] = !head || !tail (items of non-trivial runs)
         OffsetCountPairType offsets_and_run_items[ItemsPerThread];
         for(unsigned int i = 0; i < ItemsPerThread; ++i)
@@ -766,15 +766,37 @@ template<typename Config,
          typename CountsOutputIterator,
          typename RunsCountOutputIterator,
          typename LookbackScanState>
-ROCPRIM_DEVICE ROCPRIM_FORCE_INLINE
-void non_trivial_kernel_impl(InputIterator                  input,
-                             const OffsetsOutputIterator    offsets_output,
-                             const CountsOutputIterator     counts_output,
-                             const RunsCountOutputIterator  runs_count_output,
-                             const LookbackScanState        scan_state,
-                             ordered_block_id<unsigned int> ordered_block_id,
-                             const std::size_t              grid_size,
-                             const std::size_t              size)
+ROCPRIM_DEVICE ROCPRIM_FORCE_INLINE auto
+    non_trivial_kernel_impl(InputIterator,
+                            const OffsetsOutputIterator,
+                            const CountsOutputIterator,
+                            const RunsCountOutputIterator,
+                            const LookbackScanState,
+                            ordered_block_id<unsigned int>,
+                            const size_t,
+                            const size_t)
+        -> std::enable_if_t<!is_lookback_kernel_runnable<LookbackScanState>()>
+{
+    // No need to build the kernel with sleep on a device that does not require it
+}
+
+template<typename Config,
+         typename OffsetCountPairType,
+         typename InputIterator,
+         typename OffsetsOutputIterator,
+         typename CountsOutputIterator,
+         typename RunsCountOutputIterator,
+         typename LookbackScanState>
+ROCPRIM_DEVICE ROCPRIM_FORCE_INLINE auto
+    non_trivial_kernel_impl(InputIterator                  input,
+                            const OffsetsOutputIterator    offsets_output,
+                            const CountsOutputIterator     counts_output,
+                            const RunsCountOutputIterator  runs_count_output,
+                            const LookbackScanState        scan_state,
+                            ordered_block_id<unsigned int> ordered_block_id,
+                            const size_t              grid_size,
+                            const size_t              size)
+        -> std::enable_if_t<is_lookback_kernel_runnable<LookbackScanState>()>
 {
     static constexpr non_trivial_runs_config_params params     = device_params<Config>();
     static constexpr unsigned int                   block_size = params.kernel_config.block_size;
@@ -802,9 +824,9 @@ void non_trivial_kernel_impl(InputIterator                  input,
         typename block_processor::storage_type_           block;
     } storage;
 
-    const std::size_t block_id = ordered_block_id.get(threadIdx.x, storage.block_id);
+    const size_t block_id = ordered_block_id.get(threadIdx.x, storage.block_id);
 
-    const std::size_t   block_offset = block_id * items_per_block;
+    const size_t        block_offset = block_id * items_per_block;
     const InputIterator block_input  = input + block_offset;
 
     const size_t valid_in_last_block

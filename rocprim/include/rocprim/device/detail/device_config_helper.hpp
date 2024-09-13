@@ -1105,9 +1105,9 @@ struct non_trivial_runs_config_params
 template<unsigned int                 BlockSize,
          unsigned int                 ItemsPerThread,
          ::rocprim::block_load_method LoadInputMethod
-         = ::rocprim::block_load_method::block_load_transpose,
+         = ::rocprim::block_load_method::default_method,
          ::rocprim::block_scan_algorithm BlockScanAlgorithm
-         = ::rocprim::block_scan_algorithm::using_warp_scan>
+         = ::rocprim::block_scan_algorithm::reduce_then_scan>
 struct non_trivial_runs_config : public detail::non_trivial_runs_config_params
 {
     /// \brief Identifies the algorithm associated to the config.
@@ -1133,16 +1133,19 @@ struct non_trivial_runs_config : public detail::non_trivial_runs_config_params
 namespace detail
 {
 
-template<typename InputT, int ItemScaleBase = 15>
+template<typename InputT, int ItemScaleBase = 32>
 struct default_non_trivial_runs_config_base
 {
+    static constexpr unsigned int items_per_thread = 16;
+    using small_config                             = non_trivial_runs_config<256U,
+                                                 items_per_thread,
+                                                 block_load_method::block_load_vectorize,
+                                                 block_scan_algorithm::reduce_then_scan>;
+
     using OffsetCountPairT = ::rocprim::tuple<unsigned int, unsigned int>;
 
     static constexpr unsigned int size_memory_per_item
         = std::max(sizeof(InputT), sizeof(OffsetCountPairT));
-    static constexpr unsigned int item_scale
-        = static_cast<unsigned int>(ceiling_div(size_memory_per_item, 2 * sizeof(int)));
-    static constexpr unsigned int items_per_thread = std::max(1u, ItemScaleBase / item_scale);
 
     // Additional shared memory is required by the lookback scan state.
     static constexpr unsigned int shared_mem_offset
@@ -1150,14 +1153,16 @@ struct default_non_trivial_runs_config_base
                  OffsetCountPairT,
                  lookback_scan_state<OffsetCountPairT>>::storage_type);
 
-    using type
-        = non_trivial_runs_config<detail::limit_block_size<256U,
+    using big_config
+        = non_trivial_runs_config<detail::limit_block_size<64U,
                                                            items_per_thread * size_memory_per_item,
                                                            ROCPRIM_WARP_SIZE_64,
                                                            shared_mem_offset>::value,
                                   items_per_thread,
-                                  block_load_method::block_load_transpose,
-                                  block_scan_algorithm::using_warp_scan>;
+                                  block_load_method::block_load_warp_transpose,
+                                  block_scan_algorithm::reduce_then_scan>;
+
+    using type = std::conditional_t<sizeof(InputT) < 8, small_config, big_config>;
 };
 
 struct find_first_of_config_params
