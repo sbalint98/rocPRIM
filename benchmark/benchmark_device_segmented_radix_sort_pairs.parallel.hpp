@@ -131,10 +131,10 @@ struct device_segmented_radix_sort_benchmark : public config_autotune_interface
                                         seed.get_0());
 
         std::vector<value_type> values_input
-            = get_random_data<key_type>(size,
-                                        generate_limits<key_type>::min(),
-                                        generate_limits<key_type>::max(),
-                                        seed.get_0());
+            = get_random_data<value_type>(size,
+                                          generate_limits<value_type>::min(),
+                                          generate_limits<value_type>::max(),
+                                          seed.get_0());
 
         size_t batch_size = 1;
         if(size < target_size)
