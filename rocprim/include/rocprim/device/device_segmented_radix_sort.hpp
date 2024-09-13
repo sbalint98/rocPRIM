@@ -27,8 +27,8 @@
 #include <utility>
 #include <vector>
 
-#include "../config.hpp"
 #include "../common.hpp"
+#include "../config.hpp"
 #include "../detail/various.hpp"
 #include "config_types.hpp"
 

@@ -25,8 +25,8 @@
 #include <iterator>
 #include <type_traits>
 
-#include "../config.hpp"
 #include "../common.hpp"
+#include "../config.hpp"
 #include "../detail/various.hpp"
 #include "../functional.hpp"
 

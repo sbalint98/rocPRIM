@@ -26,8 +26,8 @@
 #include <iterator>
 #include <type_traits>
 
-#include "../config.hpp"
 #include "../common.hpp"
+#include "../config.hpp"
 #include "../detail/various.hpp"
 #include "../iterator/zip_iterator.hpp"
 #include "../types/tuple.hpp"

@@ -21,8 +21,8 @@
 #ifndef ROCPRIM_DEVICE_DEVICE_FIND_FIRST_OF_HPP_
 #define ROCPRIM_DEVICE_DEVICE_FIND_FIRST_OF_HPP_
 
-#include "../config.hpp"
 #include "../common.hpp"
+#include "../config.hpp"
 #include "../detail/temp_storage.hpp"
 #include "config_types.hpp"
 #include "detail/ordered_block_id.hpp"

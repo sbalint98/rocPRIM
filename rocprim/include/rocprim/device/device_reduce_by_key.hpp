@@ -30,8 +30,8 @@
 #include "detail/device_scan_common.hpp"
 #include "detail/lookback_scan_state.hpp"
 
-#include "../config.hpp"
 #include "../common.hpp"
+#include "../config.hpp"
 #include "../detail/temp_storage.hpp"
 #include "../detail/various.hpp"
 #include "../functional.hpp"

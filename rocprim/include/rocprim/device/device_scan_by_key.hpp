@@ -21,8 +21,8 @@
 #ifndef ROCPRIM_DEVICE_DEVICE_SCAN_BY_KEY_HPP_
 #define ROCPRIM_DEVICE_DEVICE_SCAN_BY_KEY_HPP_
 
-#include "../config.hpp"
 #include "../common.hpp"
+#include "../config.hpp"
 #include "../detail/temp_storage.hpp"
 #include "../detail/various.hpp"
 #include "../functional.hpp"

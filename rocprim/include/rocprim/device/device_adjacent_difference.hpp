@@ -28,8 +28,8 @@
 #include "config_types.hpp"
 #include "device_transform.hpp"
 
-#include "../config.hpp"
 #include "../common.hpp"
+#include "../config.hpp"
 #include "../functional.hpp"
 
 #include "../detail/temp_storage.hpp"
