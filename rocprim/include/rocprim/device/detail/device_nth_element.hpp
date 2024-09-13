@@ -27,8 +27,8 @@
 #include "../../block/block_sort.hpp"
 #include "../../block/block_store.hpp"
 
-#include "../../config.hpp"
 #include "../../common.hpp"
+#include "../../config.hpp"
 #include "../../intrinsics.hpp"
 #include "../../type_traits.hpp"
 
