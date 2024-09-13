@@ -59,3 +59,4 @@ namespace detail
 } // namespace detail
 
 #endif // ROCPRIM_COMMON_HPP_
+
