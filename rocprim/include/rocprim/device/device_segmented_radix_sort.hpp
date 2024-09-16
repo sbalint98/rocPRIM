@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#include "../common.hpp"
 #include "../config.hpp"
 #include "../detail/various.hpp"
 #include "config_types.hpp"
@@ -201,21 +202,6 @@ ROCPRIM_KERNEL __launch_bounds__(
                                               begin_bit,
                                               end_bit);
 }
-
-#define ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR(name, size, start) \
-    { \
-        auto _error = hipGetLastError(); \
-        if(_error != hipSuccess) return _error; \
-        if(debug_synchronous) \
-        { \
-            std::cout << name << "(" << size << ")"; \
-            auto __error = hipStreamSynchronize(stream); \
-            if(__error != hipSuccess) return __error; \
-            auto _end = std::chrono::steady_clock::now(); \
-            auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
-            std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
-        } \
-    }
 
 struct Partitioner
 {
@@ -529,7 +515,7 @@ hipError_t segmented_radix_sort_impl(void * temporary_storage,
                                end_bit);
             ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("segmented_sort:large_segments",
                                                         large_segment_count,
-                                                        start)
+                                                        start);
         }
         if(three_way_partitioning && medium_segment_count > 0)
         {
@@ -558,7 +544,7 @@ hipError_t segmented_radix_sort_impl(void * temporary_storage,
                                end_bit);
             ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("segmented_sort:medium_segments",
                                                         medium_segment_count,
-                                                        start)
+                                                        start);
         }
         if(small_segment_count > 0)
         {
@@ -586,7 +572,7 @@ hipError_t segmented_radix_sort_impl(void * temporary_storage,
                                end_bit);
             ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("segmented_sort:small_segments",
                                                         small_segment_count,
-                                                        start)
+                                                        start);
         }
     }
     else
@@ -611,12 +597,12 @@ hipError_t segmented_radix_sort_impl(void * temporary_storage,
                            short_iterations,
                            begin_bit,
                            end_bit);
-        ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("segmented_sort", segments, start)
+        ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("segmented_sort", segments, start);
     }
     return hipSuccess;
 }
 
-#undef ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR
+
 
 } // end namespace detail
 

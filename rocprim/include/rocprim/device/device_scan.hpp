@@ -25,6 +25,7 @@
 #include <iterator>
 #include <type_traits>
 
+#include "../common.hpp"
 #include "../config.hpp"
 #include "../detail/temp_storage.hpp"
 #include "../detail/various.hpp"
@@ -162,21 +163,6 @@ ROCPRIM_KERNEL
         auto end = std::chrono::steady_clock::now(); \
         auto d = std::chrono::duration_cast<std::chrono::duration<double>>(end - start); \
         std::cout << " " << d.count() * 1000 << " ms" << '\n'; \
-    }
-
-#define ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR(name, size, start) \
-    { \
-        auto _error = hipGetLastError(); \
-        if(_error != hipSuccess) return _error; \
-        if(debug_synchronous) \
-        { \
-            std::cout << name << "(" << size << ")"; \
-            auto __error = hipStreamSynchronize(stream); \
-            if(__error != hipSuccess) return __error; \
-            auto _end = std::chrono::steady_clock::now(); \
-            auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
-            std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
-        } \
     }
 
 template<lookback_scan_determinism Determinism,
@@ -323,7 +309,7 @@ inline auto scan_impl(void*               temporary_storage,
                 });
             ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("init_lookback_scan_state_kernel",
                                                         number_of_blocks,
-                                                        start)
+                                                        start);
 
             if(debug_synchronous) start = std::chrono::steady_clock::now();
             grid_size = number_of_blocks;
@@ -361,7 +347,7 @@ inline auto scan_impl(void*               temporary_storage,
                                                                            i != size_t(0),
                                                                            number_of_launch > 1);
                 });
-            ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("lookback_scan_kernel", current_size, start)
+            ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("lookback_scan_kernel", current_size, start);
 
             // Swap the last_elements
             if(number_of_launch > 1)
@@ -400,7 +386,7 @@ inline auto scan_impl(void*               temporary_storage,
     return hipSuccess;
 }
 
-#undef ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR
+
 #undef ROCPRIM_DETAIL_HIP_SYNC
 
 } // end of detail namespace

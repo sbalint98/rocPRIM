@@ -30,6 +30,7 @@
 #include "detail/device_scan_common.hpp"
 #include "detail/lookback_scan_state.hpp"
 
+#include "../common.hpp"
 #include "../config.hpp"
 #include "../detail/temp_storage.hpp"
 #include "../detail/various.hpp"
@@ -136,25 +137,6 @@ ROCPRIM_KERNEL
                                                     previous_accumulated,
                                                     number_of_tiles_launch);
 }
-
-#define ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR(name, size, start)                           \
-    do                                                                                           \
-    {                                                                                            \
-        auto _error = hipGetLastError();                                                         \
-        if(_error != hipSuccess)                                                                 \
-            return _error;                                                                       \
-        if(debug_synchronous)                                                                    \
-        {                                                                                        \
-            std::cout << name << "(" << size << ")";                                             \
-            auto __error = hipStreamSynchronize(stream);                                         \
-            if(__error != hipSuccess)                                                            \
-                return __error;                                                                  \
-            auto _end = std::chrono::steady_clock::now();                               \
-            auto _d   = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
-            std::cout << " " << _d.count() * 1000 << " ms" << '\n';                              \
-        }                                                                                        \
-    }                                                                                            \
-    while(false)
 
 template<lookback_scan_determinism Determinism,
          class Config,
@@ -376,7 +358,7 @@ hipError_t reduce_by_key_impl(void*                     temporary_storage,
     return hipSuccess;
 }
 
-#undef ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR
+
 
 } // namespace detail
 

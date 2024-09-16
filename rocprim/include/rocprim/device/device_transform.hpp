@@ -26,6 +26,7 @@
 #include <iterator>
 #include <type_traits>
 
+#include "../common.hpp"
 #include "../config.hpp"
 #include "../detail/various.hpp"
 #include "../iterator/zip_iterator.hpp"
@@ -55,21 +56,6 @@ ROCPRIM_KERNEL
                           device_params<Config>().kernel_config.items_per_thread,
                           ResultType>(input, size, output, transform_op);
 }
-
-#define ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR(name, size, start) \
-    { \
-        auto _error = hipGetLastError(); \
-        if(_error != hipSuccess) return _error; \
-        if(debug_synchronous) \
-        { \
-            std::cout << name << "(" << size << ")"; \
-            _error = hipStreamSynchronize(stream); \
-            if(_error != hipSuccess) return _error; \
-            auto _end = std::chrono::steady_clock::now(); \
-            auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
-            std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
-        } \
-    }
 
 } // end of detail namespace
 
@@ -280,7 +266,7 @@ hipError_t transform(InputIterator1 input1,
     );
 }
 
-#undef ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR
+
 
 END_ROCPRIM_NAMESPACE
 

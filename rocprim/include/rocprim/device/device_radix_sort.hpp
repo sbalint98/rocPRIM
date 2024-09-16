@@ -26,6 +26,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "../common.hpp"
 #include "../config.hpp"
 #include "../detail/temp_storage.hpp"
 #include "../detail/various.hpp"
@@ -48,25 +49,6 @@ BEGIN_ROCPRIM_NAMESPACE
 
 namespace detail
 {
-
-#ifndef ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR
-
-#define ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR(name, size, start) \
-    { \
-        auto _error = hipGetLastError(); \
-        if(_error != hipSuccess) return _error; \
-        if(debug_synchronous) \
-        { \
-            std::cout << name << "(" << size << ")"; \
-            auto __error = hipStreamSynchronize(stream); \
-            if(__error != hipSuccess) return __error; \
-            auto _end = std::chrono::steady_clock::now(); \
-            auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
-            std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
-        } \
-    }
-
-#endif
 
 template<class Tuple, size_t Index>
 constexpr auto tuple_bit_size_impl()
@@ -765,7 +747,7 @@ hipError_t
     }
 }
 
-#undef ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR
+
 
 } // end namespace detail
 

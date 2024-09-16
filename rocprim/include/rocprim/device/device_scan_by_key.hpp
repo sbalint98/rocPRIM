@@ -21,6 +21,7 @@
 #ifndef ROCPRIM_DEVICE_DEVICE_SCAN_BY_KEY_HPP_
 #define ROCPRIM_DEVICE_DEVICE_SCAN_BY_KEY_HPP_
 
+#include "../common.hpp"
 #include "../config.hpp"
 #include "../detail/temp_storage.hpp"
 #include "../detail/various.hpp"
@@ -83,23 +84,6 @@ void __global__ __launch_bounds__(device_params<Config>().kernel_config.block_si
         previous_last_value);
 }
 
-#define ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR(name, size, start)                           \
-    do                                                                                           \
-    {                                                                                            \
-        auto _error = hipGetLastError();                                                         \
-        if(_error != hipSuccess)                                                                 \
-            return _error;                                                                       \
-        if(debug_synchronous)                                                                    \
-        {                                                                                        \
-            std::cout << name << "(" << size << ")";                                             \
-            auto __error = hipStreamSynchronize(stream);                                         \
-            if(__error != hipSuccess)                                                            \
-                return __error;                                                                  \
-            auto _end = std::chrono::steady_clock::now();                               \
-            auto _d   = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
-            std::cout << " " << _d.count() * 1000 << " ms" << '\n';                              \
-        }                                                                                        \
-    } while(false)
 
 template<lookback_scan_determinism Determinism,
          bool                      Exclusive,
@@ -304,7 +288,7 @@ inline hipError_t scan_by_key_impl(void* const           temporary_storage,
     return hipSuccess;
 }
 
-#undef ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR
+
 }
 
 /// \addtogroup devicemodule
