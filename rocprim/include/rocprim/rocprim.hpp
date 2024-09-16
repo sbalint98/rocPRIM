@@ -59,6 +59,7 @@
 #include "block/block_store.hpp"
 
 #include "device/device_adjacent_difference.hpp"
+#include "device/device_adjacent_find.hpp"
 #include "device/device_binary_search.hpp"
 #include "device/device_copy.hpp"
 #include "device/device_histogram.hpp"
