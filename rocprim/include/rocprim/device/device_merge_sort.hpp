@@ -25,6 +25,7 @@
 #include <iterator>
 #include <type_traits>
 
+#include "../common.hpp"
 #include "../config.hpp"
 #include "../detail/temp_storage.hpp"
 #include "../detail/various.hpp"
@@ -135,21 +136,6 @@ void device_block_merge_mergepath_kernel(KeysInputIterator    keys_input,
                                                                                  compare_function,
                                                                                  merge_partitions);
 }
-
-#define ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR(name, size, start) \
-    { \
-        auto _error = hipGetLastError(); \
-        if(_error != hipSuccess) return _error; \
-        if(debug_synchronous) \
-        { \
-            std::cout << name << "(" << size << ")"; \
-            auto __error = hipStreamSynchronize(stream); \
-            if(__error != hipSuccess) return __error; \
-            auto _end = std::chrono::steady_clock::now(); \
-            auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
-            std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
-        } \
-    }
 
 template<typename Config, typename KeysInputIterator, typename OffsetT, typename CompareOpT>
 ROCPRIM_KERNEL __launch_bounds__(
@@ -397,7 +383,7 @@ inline hipError_t merge_sort_block_merge(
                                    compare_function);
                 ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("device_block_merge_oddeven_kernel",
                                                             size,
-                                                            start)
+                                                            start);
             }
             return hipSuccess;
         };
@@ -636,7 +622,7 @@ inline hipError_t merge_sort_impl(
     return hipSuccess;
 }
 
-#undef ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR
+
 
 } // end of detail namespace
 

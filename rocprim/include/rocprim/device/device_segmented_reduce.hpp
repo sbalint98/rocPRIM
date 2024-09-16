@@ -25,6 +25,7 @@
 #include <iterator>
 #include <type_traits>
 
+#include "../common.hpp"
 #include "../config.hpp"
 #include "../detail/various.hpp"
 #include "../functional.hpp"
@@ -62,21 +63,6 @@ ROCPRIM_KERNEL __launch_bounds__(
         reduce_op, initial_value
     );
 }
-
-#define ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR(name, size, start) \
-    { \
-        auto _error = hipGetLastError(); \
-        if(_error != hipSuccess) return _error; \
-        if(debug_synchronous) \
-        { \
-            std::cout << name << "(" << size << ")"; \
-            auto __error = hipStreamSynchronize(stream); \
-            if(__error != hipSuccess) return __error; \
-            auto _end = std::chrono::steady_clock::now(); \
-            auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
-            std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
-        } \
-    }
 
 template<
     class Config,
@@ -141,7 +127,7 @@ hipError_t segmented_reduce_impl(void * temporary_storage,
     return hipSuccess;
 }
 
-#undef ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR
+
 
 } // end of detail namespace
 
