@@ -27,7 +27,7 @@
 #include "../config.hpp"
 #include "../detail/various.hpp"
 #include "../type_traits.hpp"
-// #include "detail/config/device_run_length_encode.hpp" TODO: include
+#include "detail/config/device_run_length_encode_non_trivial.hpp"
 
 #include <type_traits>
 
@@ -131,12 +131,8 @@ struct wrapped_non_trivial_runs_impl<InputType,
     template<target_arch Arch>
     struct architecture_config
     {
-        static constexpr non_trivial_runs_config_params params =
-            typename default_non_trivial_runs_config_base<InputType>::type{};
-        // TODO: change to
-        // = default_non_trivial_runs_config<static_cast<unsigned int>(Arch),
-        //                                   InputType>{};
-        // when tuned
+        static constexpr non_trivial_runs_config_params params
+            = default_non_trivial_runs_config<static_cast<unsigned int>(Arch), InputType>{};
     };
 };
 
