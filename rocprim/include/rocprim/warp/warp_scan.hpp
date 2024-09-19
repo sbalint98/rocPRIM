@@ -180,7 +180,7 @@ public:
     /// \endparblock
     template<class BinaryFunction = ::rocprim::plus<T>, unsigned int FunctionWarpSize = WarpSize>
     ROCPRIM_DEVICE ROCPRIM_INLINE
-    auto inclusive_scan(T              input,
+    void inclusive_scan(T              input,
                         T&             output,
                         storage_type&  storage,
                         BinaryFunction scan_op = BinaryFunction())
@@ -239,7 +239,7 @@ public:
     /// \endparblock
     template<class BinaryFunction = ::rocprim::plus<T>, unsigned int FunctionWarpSize = WarpSize>
     ROCPRIM_DEVICE ROCPRIM_INLINE
-    auto inclusive_scan(T              input,
+    void inclusive_scan(T              input,
                         T&             output,
                         T&             reduction,
                         storage_type&  storage,
@@ -302,7 +302,7 @@ public:
     /// \endparblock
     template<class BinaryFunction = ::rocprim::plus<T>, unsigned int FunctionWarpSize = WarpSize>
     ROCPRIM_DEVICE ROCPRIM_INLINE
-    auto exclusive_scan(T              input,
+    void exclusive_scan(T              input,
                         T&             output,
                         T              init,
                         storage_type&  storage,
@@ -366,7 +366,7 @@ public:
     /// \endparblock
     template<class BinaryFunction = ::rocprim::plus<T>, unsigned int FunctionWarpSize = WarpSize>
     ROCPRIM_DEVICE ROCPRIM_INLINE
-    auto exclusive_scan(T              input,
+    void exclusive_scan(T              input,
                         T&             output,
                         T              init,
                         T&             reduction,
@@ -386,7 +386,7 @@ public:
     /// \param scan_op The function object used to combine elements used for the scan
     template<class BinaryFunction = ::rocprim::plus<>, unsigned int FunctionWarpSize = WarpSize>
     ROCPRIM_DEVICE ROCPRIM_INLINE
-    auto exclusive_scan(T              input,
+    void exclusive_scan(T              input,
                         T&             output,
                         storage_type&  storage,
                         BinaryFunction scan_op = BinaryFunction())
@@ -406,7 +406,7 @@ public:
     /// \param scan_op The function object used to combine elements used for the scan
     template<class BinaryFunction = ::rocprim::plus<>, unsigned int FunctionWarpSize = WarpSize>
     ROCPRIM_DEVICE ROCPRIM_INLINE
-    auto exclusive_scan(T              input,
+    void exclusive_scan(T              input,
                         T&             output,
                         storage_type&  storage,
                         T&             reduction,
@@ -475,7 +475,7 @@ public:
     /// \endparblock
     template<class BinaryFunction = ::rocprim::plus<T>, unsigned int FunctionWarpSize = WarpSize>
     ROCPRIM_DEVICE ROCPRIM_INLINE
-    auto scan(T              input,
+    void scan(T              input,
               T&             inclusive_output,
               T&             exclusive_output,
               T              init,
@@ -545,7 +545,7 @@ public:
     /// \endparblock
     template<class BinaryFunction = ::rocprim::plus<T>, unsigned int FunctionWarpSize = WarpSize>
     ROCPRIM_DEVICE ROCPRIM_INLINE
-    auto scan(T              input,
+    void scan(T              input,
               T&             inclusive_output,
               T&             exclusive_output,
               T              init,
@@ -570,7 +570,7 @@ public:
     /// or repurposed: \p __syncthreads() or \p rocprim::syncthreads().
     template<unsigned int FunctionWarpSize = WarpSize>
     ROCPRIM_DEVICE ROCPRIM_INLINE
-    auto broadcast(T input, const unsigned int src_lane, storage_type& storage)
+    T broadcast(T input, const unsigned int src_lane, storage_type& storage)
     {
         return base_type::broadcast(input, src_lane, storage);
     }
@@ -581,7 +581,7 @@ protected:
     template<unsigned int FunctionWarpSize = WarpSize>
     [[deprecated]]
     ROCPRIM_DEVICE ROCPRIM_INLINE
-    auto to_exclusive(T inclusive_input, T& exclusive_output, storage_type& storage)
+    void to_exclusive(T inclusive_input, T& exclusive_output, storage_type& storage)
     {
         return base_type::to_exclusive(inclusive_input, exclusive_output, storage);
     }
