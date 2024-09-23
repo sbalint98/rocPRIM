@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2017-2023 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2017-2024 Advanced Micro Devices, Inc. All rights reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -94,12 +94,13 @@ typed_test_def(RocprimWarpSortShuffleBasedTests, name_suffix, Sort)
 
         // Launching kernel
         hipLaunchKernelGGL(
-            HIP_KERNEL_NAME(test_hip_warp_sort<
-                items_per_thread, block_size, logical_warp_size, T
-            >),
-            dim3(grid_size), dim3(block_size), 0, 0,
-            d_output
-        );
+            HIP_KERNEL_NAME(
+                test_hip_warp_sort_kernel<items_per_thread, block_size, logical_warp_size, T>),
+            dim3(grid_size),
+            dim3(block_size),
+            0,
+            0,
+            d_output);
 
         HIP_CHECK(hipGetLastError());
         HIP_CHECK(hipDeviceSynchronize());
