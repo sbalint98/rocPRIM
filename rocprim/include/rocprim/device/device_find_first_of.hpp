@@ -40,11 +40,9 @@ BEGIN_ROCPRIM_NAMESPACE
 namespace detail
 {
 
-
-
+template<class T>
 ROCPRIM_KERNEL
-static void
-    init_find_first_of_kernel(size_t* output, size_t size, ordered_block_id<size_t> ordered_bid)
+void init_find_first_of_kernel(T* output, T size, ordered_block_id<T> ordered_bid)
 {
     *output = size;
     ordered_bid.reset();
