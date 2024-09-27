@@ -765,14 +765,15 @@ template<typename Config,
          typename OffsetsOutputIterator,
          typename CountsOutputIterator,
          typename RunsCountOutputIterator,
-         typename LookbackScanState>
+         typename LookbackScanState,
+         typename OrderedBlockIdType>
 ROCPRIM_DEVICE ROCPRIM_FORCE_INLINE auto
     non_trivial_kernel_impl(InputIterator,
                             const OffsetsOutputIterator,
                             const CountsOutputIterator,
                             const RunsCountOutputIterator,
                             const LookbackScanState,
-                            ordered_block_id<unsigned int>,
+                            OrderedBlockIdType,
                             const size_t,
                             const size_t)
         -> std::enable_if_t<!is_lookback_kernel_runnable<LookbackScanState>()>
@@ -786,14 +787,15 @@ template<typename Config,
          typename OffsetsOutputIterator,
          typename CountsOutputIterator,
          typename RunsCountOutputIterator,
-         typename LookbackScanState>
+         typename LookbackScanState,
+         typename OrderedBlockIdType>
 ROCPRIM_DEVICE ROCPRIM_FORCE_INLINE auto
     non_trivial_kernel_impl(InputIterator                  input,
                             const OffsetsOutputIterator    offsets_output,
                             const CountsOutputIterator     counts_output,
                             const RunsCountOutputIterator  runs_count_output,
                             const LookbackScanState        scan_state,
-                            ordered_block_id<unsigned int> ordered_block_id,
+                            OrderedBlockIdType ordered_block_id,
                             const size_t              grid_size,
                             const size_t              size)
         -> std::enable_if_t<is_lookback_kernel_runnable<LookbackScanState>()>
@@ -820,8 +822,8 @@ ROCPRIM_DEVICE ROCPRIM_FORCE_INLINE auto
 
     ROCPRIM_SHARED_MEMORY union
     {
-        typename decltype(ordered_block_id)::storage_type block_id;
-        typename block_processor::storage_type_           block;
+        typename OrderedBlockIdType::storage_type block_id;
+        typename block_processor::storage_type_   block;
     } storage;
 
     const size_t block_id = ordered_block_id.get(threadIdx.x, storage.block_id);
