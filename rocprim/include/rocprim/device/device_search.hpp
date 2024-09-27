@@ -18,8 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#ifndef ROCPRIM_DEVICE_DEVICE_FIND_END_HPP_
-#define ROCPRIM_DEVICE_DEVICE_FIND_END_HPP_
+#ifndef ROCPRIM_DEVICE_DEVICE_SEARCH_HPP_
+#define ROCPRIM_DEVICE_DEVICE_SEARCH_HPP_
 
 #include "../config.hpp"
 
@@ -36,9 +36,9 @@ BEGIN_ROCPRIM_NAMESPACE
 /// \addtogroup devicemodule
 /// @{
 
-/// \brief Searches for the last occurrence of the sequence.
+/// \brief Searches for the first occurrence of the sequence.
 ///
-/// Searches the input for the last occurence of a sequence, according to a particular
+/// Searches the input for the first occurence of a sequence, according to a particular
 ///   comparison function. If found, the index of the first item of the found sequence
 ///   in the input is returned. Otherwise, returns the size of the input.
 ///
@@ -46,7 +46,7 @@ BEGIN_ROCPRIM_NAMESPACE
 /// * The contents of the inputs are not altered by the function.
 /// * Returns the required size of `temporary_storage` in `storage_size`
 /// if `temporary_storage` is a null pointer.
-/// * Accepts custom compare_functions for find_end across the device.
+/// * Accepts custom compare_functions for search across the device.
 /// * Streams in graph capture mode are supported
 ///
 /// \tparam Config [optional] configuration of the primitive, must be `default_config` or `search_config`.
@@ -62,7 +62,7 @@ BEGIN_ROCPRIM_NAMESPACE
 ///
 /// \param [in] temporary_storage pointer to a device-accessible temporary storage. When
 ///   a null pointer is passed, the required allocation size (in bytes) is written to
-/// `storage_size` and function returns without performing the find_end.
+/// `storage_size` and function returns without performing the search.
 /// \param [in,out] storage_size reference to a size (in bytes) of `temporary_storage`.
 /// \param [in] input iterator to the input range.
 /// \param [in] keys iterator to the key range.
@@ -84,7 +84,7 @@ BEGIN_ROCPRIM_NAMESPACE
 ///
 /// \par Example
 /// \parblock
-/// In this example a device-level find_end is performed where input values are
+/// In this example a device-level search is performed where input values are
 ///   represented by an array of unsigned integers and the key is also an array
 ///   of unsigned integers.
 ///
@@ -101,7 +101,7 @@ BEGIN_ROCPRIM_NAMESPACE
 /// size_t temporary_storage_size_bytes;
 /// void * temporary_storage_ptr = nullptr;
 /// // Get required size of the temporary storage
-/// rocprim::find_end(
+/// rocprim::search(
 ///     temporary_storage_ptr, temporary_storage_size_bytes,
 ///     input, key, output, size, key_size
 /// );
@@ -109,12 +109,12 @@ BEGIN_ROCPRIM_NAMESPACE
 /// // allocate temporary storage
 /// hipMalloc(&temporary_storage_ptr, temporary_storage_size_bytes);
 ///
-/// // perform find_end
-/// rocprim::find_end(
+/// // perform search
+/// rocprim::search(
 ///     temporary_storage_ptr, temporary_storage_size_bytes,
 ///     input, key, output, size, key_size
 /// );
-/// // output:   [ 7 ]
+/// // output:   [ 2 ]
 /// \endcode
 /// \endparblock
 template<class Config = default_config,
@@ -124,27 +124,27 @@ template<class Config = default_config,
          class BinaryFunction
          = rocprim::equal_to<typename std::iterator_traits<InputIterator1>::value_type>>
 ROCPRIM_INLINE
-hipError_t find_end(void*          temporary_storage,
-                    size_t&        storage_size,
-                    InputIterator1 input,
-                    InputIterator2 keys,
-                    OutputIterator output,
-                    size_t         size,
-                    size_t         keys_size,
-                    BinaryFunction compare_function  = BinaryFunction(),
-                    hipStream_t    stream            = 0,
-                    bool           debug_synchronous = false)
+hipError_t search(void*          temporary_storage,
+                  size_t&        storage_size,
+                  InputIterator1 input,
+                  InputIterator2 keys,
+                  OutputIterator output,
+                  size_t         size,
+                  size_t         keys_size,
+                  BinaryFunction compare_function  = BinaryFunction(),
+                  hipStream_t    stream            = 0,
+                  bool           debug_synchronous = false)
 {
-    return detail::search_impl<Config, false>(temporary_storage,
-                                              storage_size,
-                                              input,
-                                              keys,
-                                              output,
-                                              size,
-                                              keys_size,
-                                              compare_function,
-                                              stream,
-                                              debug_synchronous);
+    return detail::search_impl<Config, true>(temporary_storage,
+                                             storage_size,
+                                             input,
+                                             keys,
+                                             output,
+                                             size,
+                                             keys_size,
+                                             compare_function,
+                                             stream,
+                                             debug_synchronous);
 }
 
 /// @}
@@ -152,4 +152,4 @@ hipError_t find_end(void*          temporary_storage,
 
 END_ROCPRIM_NAMESPACE
 
-#endif // ROCPRIM_DEVICE_DEVICE_FIND_END_HPP_
+#endif // ROCPRIM_DEVICE_DEVICE_SEARCH_HPP_
