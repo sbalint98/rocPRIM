@@ -370,6 +370,35 @@ struct invoke_result_impl<decltype(void(INVOKE(std::declval<F>(), std::declval<A
 };
 
 template<class T>
+struct is_tuple
+{
+public:
+    static constexpr bool value = false;
+};
+
+template<class... Args>
+struct is_tuple<::rocprim::tuple<Args...>>
+{
+private:
+    template<size_t Index>
+    ROCPRIM_HOST_DEVICE
+    static constexpr bool is_tuple_impl()
+    {
+        return is_tuple_impl<Index + 1>();
+    }
+
+    template<>
+    ROCPRIM_HOST_DEVICE
+    static constexpr bool is_tuple_impl<sizeof...(Args)>()
+    {
+        return true;
+    }
+
+public:
+    static constexpr bool value = is_tuple_impl<0>();
+};
+
+template<class T>
 struct is_tuple_of_references
 {
     static_assert(sizeof(T) == 0, "is_tuple_of_references is only implemented for rocprim::tuple");
@@ -438,6 +467,41 @@ struct float_bit_mask<rocprim::half>
 
 template<class...>
 using void_t = void;
+
+template<typename Iterator>
+using value_type_t = typename std::iterator_traits<Iterator>::value_type;
+
+template<typename EqualityOp, int Ret = 0>
+struct guarded_inequality_wrapper
+{
+    /// Wrapped equality operator
+    EqualityOp op;
+
+    /// Out-of-bounds limit
+    size_t guard;
+
+    /// Constructor
+    ROCPRIM_HOST_DEVICE inline guarded_inequality_wrapper(EqualityOp op, size_t guard)
+        : op(op), guard(guard)
+    {}
+
+    /// \brief Guarded boolean inequality operator.
+    ///
+    /// \tparam T Type of the operands compared by the equality operator
+    /// \param a Left hand-side operand
+    /// \param b Right hand-side operand
+    /// \param idx Index of the thread calling to this operator. This is used to determine which
+    /// operations are out-of-bounds
+    /// \returns <tt>!op(a, b)</tt> for a certain equality operator \p op when in-bounds.
+    template<typename T>
+    ROCPRIM_HOST_DEVICE
+    inline bool
+        operator()(const T& a, const T& b, size_t idx) const
+    {
+        // In-bounds return operation result, out-of-bounds return ret.
+        return (idx < guard) ? !op(a, b) : Ret;
+    }
+};
 
 } // end namespace detail
 

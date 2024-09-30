@@ -34,6 +34,7 @@
 #include "../../thread/thread_operators.hpp"
 
 #include "../../config.hpp"
+#include "../../type_traits.hpp"
 
 #include <iterator>
 #include <type_traits>
@@ -47,12 +48,10 @@ namespace detail
 namespace reduce_by_key
 {
 
-template<typename Iterator>
-using value_type_t = typename std::iterator_traits<Iterator>::value_type;
-
 template<typename ValueIterator, typename BinaryOp>
 using accumulator_type_t =
-    typename invoke_result_binary_op<reduce_by_key::value_type_t<ValueIterator>, BinaryOp>::type;
+    typename invoke_result_binary_op<::rocprim::detail::value_type_t<ValueIterator>,
+                                     BinaryOp>::type;
 
 template<typename AccumulatorType>
 using wrapped_type_t = rocprim::tuple<unsigned int, AccumulatorType>;
@@ -60,36 +59,6 @@ using wrapped_type_t = rocprim::tuple<unsigned int, AccumulatorType>;
 template<typename AccumulatorType, bool UseSleep = false>
 using lookback_scan_state_t
     = detail::lookback_scan_state<wrapped_type_t<AccumulatorType>, UseSleep>;
-
-template<typename EqualityOp>
-struct guarded_inequality_wrapper
-{
-    /// Wrapped equality operator
-    EqualityOp op;
-
-    /// Out-of-bounds limit
-    size_t guard;
-
-    /// Constructor
-    ROCPRIM_HOST_DEVICE inline guarded_inequality_wrapper(EqualityOp op, size_t guard)
-        : op(op), guard(guard)
-    {}
-
-    /// \brief Guarded boolean inequality operator.
-    ///
-    /// \tparam T Type of the operands compared by the equality operator
-    /// \param a Left hand-side operand
-    /// \param b Right hand-side operand
-    /// \param idx Index of the thread calling to this operator. This is used to determine which
-    /// operations are out-of-bounds
-    /// \returns <tt>!op(a, b)</tt> for a certain equality operator \p op when in-bounds.
-    template<typename T>
-    ROCPRIM_HOST_DEVICE inline bool operator()(const T& a, const T& b, size_t idx) const
-    {
-        // In-bounds return operation result, out-of-bounds return false.
-        return (idx < guard) ? !op(a, b) : 0;
-    }
-};
 
 template<typename KeyType,
          typename AccumulatorType,
@@ -155,7 +124,8 @@ struct discontinuity_helper
         {
             // If it's the last tile globally, the out-of-bound items should not be flagged.
             auto guarded_not_equal
-                = guarded_inequality_wrapper<CompareFunction>(compare, remaining);
+                = ::rocprim::detail::guarded_inequality_wrapper<CompareFunction>(compare,
+                                                                                 remaining);
 
             if(!is_global_first_tile)
             {
@@ -545,7 +515,7 @@ ROCPRIM_DEVICE ROCPRIM_FORCE_INLINE auto
     static constexpr block_scan_algorithm scan_algorithm     = params.scan_algorithm;
     static constexpr unsigned int         items_per_tile     = block_size * items_per_thread;
 
-    using key_type = reduce_by_key::value_type_t<KeyIterator>;
+    using key_type = ::rocprim::detail::value_type_t<KeyIterator>;
 
     using tile_processor = tile_helper<key_type,
                                        AccumulatorType,

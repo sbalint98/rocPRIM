@@ -21,13 +21,15 @@
 #ifndef ROCPRIM_DEVICE_DEVICE_RUN_LENGTH_ENCODE_CONFIG_HPP_
 #define ROCPRIM_DEVICE_DEVICE_RUN_LENGTH_ENCODE_CONFIG_HPP_
 
-#include <type_traits>
+#include "config_types.hpp"
+#include "detail/device_config_helper.hpp"
 
 #include "../config.hpp"
 #include "../detail/various.hpp"
-#include "detail/device_config_helper.hpp"
+#include "../type_traits.hpp"
+#include "detail/config/device_run_length_encode_non_trivial.hpp"
 
-#include "config_types.hpp"
+#include <type_traits>
 
 /// \addtogroup primitivesmodule_deviceconfigs
 /// @{
@@ -55,12 +57,117 @@ struct run_length_encode_config
 namespace detail
 {
 
-// The problem size for the selection is the number of runs, which may be much smaller than the
-//   total problem size. The tuning assumption of reasonably large inputs does therefore not hold.
-template<typename T>
-using default_run_length_encode_config
-    = run_length_encode_config<default_config,
-                               typename default_partition_config_base<T, false>::type>;
+// Wrap around run_length_encode_config and the newly added non_trivial_runs_config for the
+// run_length_encode_non_trivial_runs algorithm. Three cases are considered for selecting
+// the appropriate config:
+//
+//   - When a run_length_encode_config struct is passed as argument, an specialization of
+//     this struct takes care of mapping the parameters of that config to the newly added
+//     non_trivial_runs_config.
+//
+//   - When a default config is passed, another specialization takes care of using the
+//     default set up of non_trivial_runs_config.
+//
+//   - When a non_trivial_runs_config is passed, the params are set from this config.
+//
+template<typename RLENonTrivialRunsConfig, typename>
+struct wrapped_non_trivial_runs_config
+{
+    static_assert(std::is_same<typename RLENonTrivialRunsConfig::tag,
+                               detail::non_trivial_runs_config_tag>::value,
+                  "Config must be a specialization of struct template non_trivial_runs_config");
+
+    template<target_arch Arch>
+    struct architecture_config
+    {
+        static constexpr non_trivial_runs_config_params params = RLENonTrivialRunsConfig{};
+    };
+};
+
+template<class ReduceByKeyConfig, class SelectConfig, class InputType>
+struct wrapped_non_trivial_runs_config<
+    rocprim::run_length_encode_config<ReduceByKeyConfig, SelectConfig>,
+    InputType>
+{
+    template<target_arch Arch>
+    struct architecture_config
+    {
+        // Mapping <reduce_by_key_config, select_config> to non_trivial_runs_config.
+        // Beware that this mapping may impact performance of executions of
+        // run_length_encode_non_trivial_runs with the former run_length_encode_config,
+        // as it may not be the best for all cases.
+        static constexpr unsigned int block_size       = ReduceByKeyConfig::block_size;
+        static constexpr unsigned int items_per_thread = ReduceByKeyConfig::items_per_thread;
+
+        static constexpr block_load_method load_input_method = ReduceByKeyConfig::load_keys_method;
+        static constexpr block_scan_algorithm scan_algorithm = ReduceByKeyConfig::scan_algorithm;
+
+        static constexpr non_trivial_runs_config_params params
+            = non_trivial_runs_config<block_size,
+                                      items_per_thread,
+                                      load_input_method,
+                                      scan_algorithm>{};
+    };
+};
+
+// Generic for default config: instantiate base config.
+template<typename InputType, typename Enable = void>
+struct wrapped_non_trivial_runs_impl
+{
+    template<target_arch Arch>
+    struct architecture_config
+    {
+        static constexpr non_trivial_runs_config_params params =
+            typename default_non_trivial_runs_config_base<InputType>::type{};
+    };
+};
+
+// Specialization for default config if types are arithmetic or half/bfloat16-precision
+// floating point types: instantiate the tuned config.
+template<typename InputType>
+struct wrapped_non_trivial_runs_impl<InputType,
+                                     std::enable_if_t<rocprim::is_arithmetic<InputType>::value>>
+{
+    template<target_arch Arch>
+    struct architecture_config
+    {
+        static constexpr non_trivial_runs_config_params params
+            = default_non_trivial_runs_config<static_cast<unsigned int>(Arch), InputType>{};
+    };
+};
+
+// Specialization for default config.
+template<typename InputType>
+struct wrapped_non_trivial_runs_config<default_config, InputType>
+    : wrapped_non_trivial_runs_impl<InputType>
+{};
+
+#ifndef DOXYGEN_DOCUMENTATION_BUILD
+
+template<typename RLENonTrivialRunsConfig, typename InputType>
+template<target_arch Arch>
+constexpr non_trivial_runs_config_params
+    wrapped_non_trivial_runs_config<RLENonTrivialRunsConfig,
+                                    InputType>::architecture_config<Arch>::params;
+
+template<class ReduceByKeyConfig, class SelectConfig, typename InputType>
+template<target_arch Arch>
+constexpr non_trivial_runs_config_params wrapped_non_trivial_runs_config<
+    rocprim::run_length_encode_config<ReduceByKeyConfig, SelectConfig>,
+    InputType>::architecture_config<Arch>::params;
+
+template<typename InputType, typename Enable>
+template<target_arch Arch>
+constexpr non_trivial_runs_config_params
+    wrapped_non_trivial_runs_impl<InputType, Enable>::architecture_config<Arch>::params;
+
+template<typename InputType>
+template<target_arch Arch>
+constexpr non_trivial_runs_config_params wrapped_non_trivial_runs_impl<
+    InputType,
+    std::enable_if_t<is_arithmetic<InputType>::value>>::architecture_config<Arch>::params;
+
+#endif // DOXYGEN_DOCUMENTATION_BUILD
 
 } // end namespace detail
 

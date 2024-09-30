@@ -37,6 +37,7 @@
 #include "../functional.hpp"
 #include "../intrinsics/thread.hpp"
 #include "../iterator/constant_iterator.hpp"
+#include "../type_traits.hpp"
 
 #include <chrono>
 #include <iostream>
@@ -160,7 +161,7 @@ hipError_t reduce_by_key_impl(void*                     temporary_storage,
                               const hipStream_t         stream,
                               const bool                debug_synchronous)
 {
-    using key_type         = reduce_by_key::value_type_t<KeysInputIterator>;
+    using key_type         = ::rocprim::detail::value_type_t<KeysInputIterator>;
     using accumulator_type = reduce_by_key::accumulator_type_t<ValuesInputIterator, BinaryFunction>;
 
     using config = wrapped_reduce_by_key_config<Config, key_type, accumulator_type, BinaryFunction>;

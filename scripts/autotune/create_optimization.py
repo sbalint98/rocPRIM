@@ -638,6 +638,14 @@ class AlgorithmDeviceFindFirstOf(Algorithm):
     def __init__(self, fallback_entries):
         Algorithm.__init__(self, fallback_entries)
 
+class AlgorithmDeviceRunLengthEncodeNonTrivial(Algorithm):
+    algorithm_name = 'device_run_length_encode_non_trivial'
+    cpp_configuration_template_name = 'run_length_encode_config_template'
+    config_selection_params = [SelectionType(name='key_type', is_optional=False, select_on_size_only=False)]
+
+    def __init__(self, fallback_entries):
+        Algorithm.__init__(self, fallback_entries)
+
 def filt_algo_regex(e: FallbackCase, algorithm_name):
     if e.algo_regex:
         return re.match(e.algo_regex, algorithm_name) is not None
@@ -699,6 +707,8 @@ def create_algorithm(algorithm_name: str, fallback_entries: List[FallbackCase]):
         return AlgorithmDeviceReduceByKey(fallback_entries)
     elif algorithm_name == 'device_find_first_of':
         return AlgorithmDeviceFindFirstOf(fallback_entries)
+    elif algorithm_name == 'device_run_length_encode_non_trivial':
+        return AlgorithmDeviceRunLengthEncodeNonTrivial(fallback_entries)
     else:
         raise(NotSupportedError(f'Algorithm "{algorithm_name}" is not supported (yet)'))
 

@@ -13,6 +13,9 @@ Documentation for rocPRIM is available at
 * Added rocprim::numeric_limits which is an extension of `std::numeric_limits`, which includes support for 128-bit integers.
 * Added rocprim::int128_t and rocprim::uint128_t which are the __int128_t and __uint128_t types.
 * Added the parallel `search` and `find_end` device functions similar to `std::search` and `std::find_end`, these functions search for the first and last occurrence of the sequence respectively.
+* Added a parallel `find_end` device function similar to `std::find_end`, this function searches for the last occurrence of the sequence.
+* Added hipGraph support to device run-length-encode for non trivial runs (`rocprim::run_length_encode_non_trivial_runs`).
+* Added configuration autotuning to device run-length-encode for non trivial runs (`rocprim::run_length_encode_non_trivial_runs`) for improved performance on selected architectures.
 
 ### Changes
 
