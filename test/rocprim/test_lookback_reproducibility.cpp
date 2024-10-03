@@ -199,12 +199,12 @@ TYPED_TEST(RocprimLookbackReproducibilityTests, Scan)
                                         d_output,
                                         output.size() * sizeof(T),
                                         hipMemcpyDeviceToHost));
-                    hipFree(d_temp_storage);
+                    HIP_CHECK(hipFree(d_temp_storage));
                     return output;
                 });
 
-            hipFree(d_input);
-            hipFree(d_output);
+            HIP_CHECK(hipFree(d_input));
+            HIP_CHECK(hipFree(d_output));
         }
     }
 }
@@ -296,12 +296,12 @@ TYPED_TEST(RocprimLookbackReproducibilityTests, ScanByKey)
                                         d_output,
                                         output.size() * sizeof(V),
                                         hipMemcpyDeviceToHost));
-                    hipFree(d_temp_storage);
+                    HIP_CHECK(hipFree(d_temp_storage));
                     return output;
                 });
 
-            hipFree(d_input);
-            hipFree(d_output);
+            HIP_CHECK(hipFree(d_input));
+            HIP_CHECK(hipFree(d_output));
         }
     }
 }
@@ -409,13 +409,13 @@ TYPED_TEST(RocprimLookbackReproducibilityTests, ReduceByKey)
                                         d_output,
                                         output.size() * sizeof(V),
                                         hipMemcpyDeviceToHost));
-                    hipFree(d_temp_storage);
+                    HIP_CHECK(hipFree(d_temp_storage));
                     return output;
                 });
 
-            hipFree(d_input);
-            hipFree(d_output);
-            hipFree(d_unique_count_output);
+            HIP_CHECK(hipFree(d_input));
+            HIP_CHECK(hipFree(d_output));
+            HIP_CHECK(hipFree(d_unique_count_output));
         }
     }
 }

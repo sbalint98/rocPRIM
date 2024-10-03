@@ -20,6 +20,7 @@ Documentation for rocPRIM is available at
 ### Changes
 
 * Removed HIP-CPU support. HIP-CPU support was experimental and broken.
+* Changed the C++ version from 14 to 17. C++14 will be deprecated in the next major release.
 
 ### Fixes
 

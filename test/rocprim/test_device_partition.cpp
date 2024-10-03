@@ -218,11 +218,11 @@ TYPED_TEST(RocprimDevicePartitionTests, Flagged)
             ASSERT_NO_FATAL_FAILURE(test_utils::assert_eq(output, expected_selected, expected_selected.size()));
             ASSERT_NO_FATAL_FAILURE(test_utils::assert_eq(output_rejected, expected_rejected, expected_rejected.size()));
 
-            hipFree(d_input);
-            hipFree(d_flags);
-            hipFree(d_output);
-            hipFree(d_selected_count_output);
-            hipFree(d_temp_storage);
+            HIP_CHECK(hipFree(d_input));
+            HIP_CHECK(hipFree(d_flags));
+            HIP_CHECK(hipFree(d_output));
+            HIP_CHECK(hipFree(d_selected_count_output));
+            HIP_CHECK(hipFree(d_temp_storage));
 
             if(TestFixture::use_graphs)
             {
@@ -329,9 +329,9 @@ TYPED_TEST(RocprimDevicePartitionTests, PredicateEmptyInput)
     );
     ASSERT_EQ(selected_count_output, 0);
 
-    hipFree(d_output);
-    hipFree(d_selected_count_output);
-    hipFree(d_temp_storage);
+    HIP_CHECK(hipFree(d_output));
+    HIP_CHECK(hipFree(d_selected_count_output));
+    HIP_CHECK(hipFree(d_temp_storage));
 
     if (TestFixture::use_graphs)
     {
@@ -475,10 +475,10 @@ TYPED_TEST(RocprimDevicePartitionTests, Predicate)
             ASSERT_NO_FATAL_FAILURE(test_utils::assert_eq(output, expected_selected, expected_selected.size()));
             ASSERT_NO_FATAL_FAILURE(test_utils::assert_eq(output_rejected, expected_rejected, expected_rejected.size()));
 
-            hipFree(d_input);
-            hipFree(d_output);
-            hipFree(d_selected_count_output);
-            hipFree(d_temp_storage);
+            HIP_CHECK(hipFree(d_input));
+            HIP_CHECK(hipFree(d_output));
+            HIP_CHECK(hipFree(d_selected_count_output));
+            HIP_CHECK(hipFree(d_temp_storage));
 
             if(TestFixture::use_graphs)
             {
@@ -637,11 +637,11 @@ TYPED_TEST(RocprimDevicePartitionTests, PredicateTwoWay)
             ASSERT_NO_FATAL_FAILURE(
                 test_utils::assert_eq(rejected, expected_rejected, expected_rejected.size()));
 
-            hipFree(d_input);
-            hipFree(d_selected);
-            hipFree(d_rejected);
-            hipFree(d_selected_count_output);
-            hipFree(d_temp_storage);
+            HIP_CHECK(hipFree(d_input));
+            HIP_CHECK(hipFree(d_selected));
+            HIP_CHECK(hipFree(d_rejected));
+            HIP_CHECK(hipFree(d_selected_count_output));
+            HIP_CHECK(hipFree(d_temp_storage));
 
             if(TestFixture::use_graphs)
             {
@@ -849,12 +849,12 @@ TYPED_TEST(RocprimDevicePartitionTests, PredicateThreeWay)
 
                 ASSERT_NO_FATAL_FAILURE(test_utils::assert_eq(output, expected, expected.size()));
 
-                hipFree(d_input);
-                hipFree(d_first_output);
-                hipFree(d_second_output);
-                hipFree(d_unselected_output);
-                hipFree(d_selected_counts);
-                hipFree(d_temp_storage);
+                HIP_CHECK(hipFree(d_input));
+                HIP_CHECK(hipFree(d_first_output));
+                HIP_CHECK(hipFree(d_second_output));
+                HIP_CHECK(hipFree(d_unselected_output));
+                HIP_CHECK(hipFree(d_selected_counts));
+                HIP_CHECK(hipFree(d_temp_storage));
 
                 if(TestFixture::use_graphs)
                 {
@@ -1630,10 +1630,10 @@ TEST(RocprimDevicePartitionBlockSizeTests, BlockSize)
             ASSERT_NO_FATAL_FAILURE(test_utils::assert_eq(output, expected_selected, expected_selected.size()));
             ASSERT_NO_FATAL_FAILURE(test_utils::assert_eq(output_rejected, expected_rejected, expected_rejected.size()));
 
-            hipFree(d_input);
-            hipFree(d_output);
-            hipFree(d_selected_count_output);
-            hipFree(d_temp_storage);
+            HIP_CHECK(hipFree(d_input));
+            HIP_CHECK(hipFree(d_output));
+            HIP_CHECK(hipFree(d_selected_count_output));
+            HIP_CHECK(hipFree(d_temp_storage));
         }
     }
 }
