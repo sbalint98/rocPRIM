@@ -21,8 +21,8 @@
 #ifndef ROCPRIM_DEVICE_DETAIL_DEVICE_REDUCE_HPP_
 #define ROCPRIM_DEVICE_DETAIL_DEVICE_REDUCE_HPP_
 
-#include <type_traits>
 #include <iterator>
+#include <type_traits>
 
 #include "../../config.hpp"
 #include "../../detail/temp_storage.hpp"
@@ -30,8 +30,8 @@
 #include "../config_types.hpp"
 #include "../device_reduce_config.hpp"
 
-#include "../../intrinsics.hpp"
 #include "../../functional.hpp"
+#include "../../intrinsics.hpp"
 #include "../../types.hpp"
 
 #include "../../block/block_load.hpp"
@@ -44,33 +44,21 @@ namespace detail
 
 // Helper functions for reducing final value with
 // initial value.
-template<
-    bool WithInitialValue,
-    class T,
-    class BinaryFunction
->
+template<bool WithInitialValue, class T, class BinaryFunction>
 ROCPRIM_DEVICE ROCPRIM_INLINE
-auto reduce_with_initial(T output,
-                         T initial_value,
-                         BinaryFunction reduce_op)
-    -> typename std::enable_if<WithInitialValue, T>::type
+auto reduce_with_initial(T output, T initial_value, BinaryFunction reduce_op) ->
+    typename std::enable_if<WithInitialValue, T>::type
 {
     return reduce_op(initial_value, output);
 }
 
-template<
-    bool WithInitialValue,
-    class T,
-    class BinaryFunction
->
+template<bool WithInitialValue, class T, class BinaryFunction>
 ROCPRIM_DEVICE ROCPRIM_INLINE
-auto reduce_with_initial(T output,
-                         T initial_value,
-                         BinaryFunction reduce_op)
-    -> typename std::enable_if<!WithInitialValue, T>::type
+auto reduce_with_initial(T output, T initial_value, BinaryFunction reduce_op) ->
+    typename std::enable_if<!WithInitialValue, T>::type
 {
-    (void) initial_value;
-    (void) reduce_op;
+    (void)initial_value;
+    (void)reduce_op;
     return output;
 }
 
@@ -81,14 +69,17 @@ template<
     class InputIterator,
     class OutputIterator,
     class InitValueType,
-    class BinaryFunction
+    class BinaryFunction,
+    class OutputType
 >
 ROCPRIM_DEVICE ROCPRIM_FORCE_INLINE
 void block_reduce_kernel_impl(InputIterator input,
                               const size_t input_size,
                               OutputIterator output,
                               InitValueType initial_value,
-                              BinaryFunction reduce_op)
+                              BinaryFunction reduce_op,
+                              unsigned char* block_complete,
+                              OutputType* block_tmp)
 {
     static constexpr reduce_config_params params = device_params<Config>();
 
@@ -111,12 +102,10 @@ void block_reduce_kernel_impl(InputIterator input,
     // last incomplete block
     if(flat_block_id == (input_size / items_per_block))
     {
-        block_load_direct_striped<block_size>(
-            flat_id,
-            input + block_offset,
-            values,
-            valid_in_last_block
-        );
+        block_load_direct_striped<block_size>(flat_id,
+                                              input + block_offset,
+                                              values,
+                                              valid_in_last_block);
 
         output_value = values[0];
         ROCPRIM_UNROLL
@@ -136,34 +125,47 @@ void block_reduce_kernel_impl(InputIterator input,
     }
     else
     {
-        block_load_direct_striped<block_size>(
-            flat_id,
-            input + block_offset,
-            values
-        );
+        block_load_direct_striped<block_size>(flat_id, input + block_offset, values);
 
         // load input values into values
-        block_reduce_type()
-            .reduce(
-                values, // input
-                output_value, // output
-                reduce_op
-            );
+        block_reduce_type().reduce(values, // input
+                                   output_value, // output
+                                   reduce_op);
     }
 
     // Save value into output
     if(flat_id == 0)
     {
-        output[flat_block_id] = input_size == 0
-            ? static_cast<result_type>(initial_value)
-            : reduce_with_initial<WithInitialValue>(
-                output_value,
-                static_cast<result_type>(initial_value),
-                reduce_op
-            );
+        result_type value;
+        if(flat_block_id == 0)
+        {
+            value = output_value;
+            block_tmp[flat_block_id] = value;
+        }
+        else
+        {
+            while(1)
+            {
+                if(atomic_load(&block_complete[flat_block_id - 1]) == true)
+                {
+                    value = reduce_op(output_value, block_tmp[flat_block_id - 1]);
+                    block_tmp[flat_block_id] = value;
+                    break;
+                }
+            }
+        }
+
+        atomic_store(&block_complete[flat_block_id], true);
+
+        if(flat_block_id == detail::ceiling_div(input_size, items_per_block) - 1)
+        {
+            output[0] = reduce_with_initial<WithInitialValue>(value,
+                                                            static_cast<result_type>(initial_value),
+                                                            reduce_op);
+        }
     }
 }
-} // end of detail namespace
+} // namespace detail
 
 END_ROCPRIM_NAMESPACE
 
