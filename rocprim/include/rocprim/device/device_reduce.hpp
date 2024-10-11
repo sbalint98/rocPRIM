@@ -185,9 +185,6 @@ hipError_t reduce_impl(void * temporary_storage,
         return hipSuccess;
     }
 
-    RETURN_ON_ERROR(
-        hipMemsetAsync(block_complete, 0, sizeof(*block_complete), stream));
-
     if(number_of_blocks > items_per_block)
     {
         const auto    aligned_size_limit = number_of_blocks_limit * items_per_block;
@@ -228,6 +225,8 @@ hipError_t reduce_impl(void * temporary_storage,
     }
     else
     {
+
+        RETURN_ON_ERROR(hipMemsetAsync(block_complete, 0, sizeof(unsigned int), stream));
 
         if(debug_synchronous)
         {
