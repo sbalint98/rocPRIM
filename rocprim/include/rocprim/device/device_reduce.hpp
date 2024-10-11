@@ -60,7 +60,7 @@ void block_reduce_kernel(InputIterator  input,
                          OutputIterator output,
                          InitValueType  initial_value,
                          BinaryFunction reduce_op,
-                         unsigned char* block_complete,
+                         unsigned int* block_complete,
                          OutputType*    block_tmp)
 {
     block_reduce_kernel_impl<WithInitialValue, Config, ResultType>(input,
@@ -127,8 +127,25 @@ hipError_t reduce_impl(void * temporary_storage,
     void*        nested_temp_storage{};
 
     size_t nested_temp_storage_size = 0;
+    if(number_of_blocks > items_per_block)
+    {
+        const hipError_t nested_result
+            = reduce_impl<WithInitialValue, Config>(nullptr,
+                                                    nested_temp_storage_size,
+                                                    block_prefixes, // input
+                                                    output, // output
+                                                    initial_value,
+                                                    number_of_blocks, // input size
+                                                    reduce_op,
+                                                    stream,
+                                                    debug_synchronous);
+        if(nested_result != hipSuccess)
+        {
+            return nested_result;
+        }
+    }
 
-    unsigned char* block_complete = nullptr;
+    unsigned int* block_complete = nullptr;
     result_type*   block_tmp      = nullptr;
 
     const hipError_t partition_result = detail::temp_storage::partition(
@@ -136,8 +153,10 @@ hipError_t reduce_impl(void * temporary_storage,
         storage_size,
         detail::temp_storage::make_linear_partition(
             detail::temp_storage::ptr_aligned_array(&block_prefixes, block_prefix_size),
-            detail::temp_storage::ptr_aligned_array(&block_complete, number_of_blocks),
-            detail::temp_storage::ptr_aligned_array(&block_tmp, number_of_blocks),
+            detail::temp_storage::ptr_aligned_array(&block_complete, 1),
+            detail::temp_storage::ptr_aligned_array(
+                &block_tmp,
+                number_of_blocks > items_per_block ? 0 : number_of_blocks),
             detail::temp_storage::make_partition(&nested_temp_storage,
                                                  nested_temp_storage_size,
                                                  alignof(result_type))));
@@ -167,9 +186,9 @@ hipError_t reduce_impl(void * temporary_storage,
     }
 
     RETURN_ON_ERROR(
-        hipMemsetAsync(block_complete, 0, sizeof(*block_complete) * number_of_blocks, stream));
+        hipMemsetAsync(block_complete, 0, sizeof(*block_complete), stream));
 
-    if(number_of_blocks > 1)
+    if(number_of_blocks > items_per_block)
     {
         const auto    aligned_size_limit = number_of_blocks_limit * items_per_block;
 
@@ -178,7 +197,6 @@ hipError_t reduce_impl(void * temporary_storage,
         for(size_t i = 0, offset = 0; i < number_of_launch; ++i, offset += aligned_size_limit) {
             const auto current_size = std::min<size_t>(size - offset, aligned_size_limit);
             const auto current_blocks = (current_size + items_per_block - 1) / items_per_block;
-
             if(debug_synchronous)
             {
                 start = std::chrono::steady_clock::now();
@@ -187,20 +205,36 @@ hipError_t reduce_impl(void * temporary_storage,
                 <<<dim3(current_blocks), dim3(block_size), 0, stream>>>(
                     input + offset,
                     current_size,
-                    output,
+                    block_prefixes + i * number_of_blocks_limit,
                     initial_value,
                     reduce_op, block_complete, block_tmp);
             ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("block_reduce_kernel", current_size, start);
         }
+
+        if(debug_synchronous)
+        {
+            start = std::chrono::steady_clock::now();
+        }
+        RETURN_ON_ERROR(reduce_impl<WithInitialValue, Config>(nested_temp_storage,
+                                                              nested_temp_storage_size,
+                                                              block_prefixes, // input
+                                                              output, // output
+                                                              initial_value,
+                                                              number_of_blocks, // input size
+                                                              reduce_op,
+                                                              stream,
+                                                              debug_synchronous));
+        ROCPRIM_DETAIL_HIP_SYNC("nested_device_reduce", number_of_blocks, start);
     }
     else
     {
+
         if(debug_synchronous)
         {
             start = std::chrono::steady_clock::now();
         }
         detail::block_reduce_kernel<WithInitialValue, config, result_type>
-            <<<dim3(1), dim3(block_size), 0, stream>>>(input,
+            <<<dim3(number_of_blocks), dim3(block_size), 0, stream>>>(input,
                                                        size,
                                                        output,
                                                        initial_value,
