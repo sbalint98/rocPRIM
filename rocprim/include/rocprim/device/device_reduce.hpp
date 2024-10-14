@@ -71,6 +71,28 @@ void block_reduce_kernel(InputIterator  input,
                                                                    block_complete, block_tmp);
 }
 
+template<bool WithInitialValue,
+         class Config,
+         class ResultType,
+         class InputIterator,
+         class OutputIterator,
+         class InitValueType,
+         class BinaryFunction>
+ROCPRIM_KERNEL
+    __launch_bounds__(device_params<Config>().reduce_config.block_size)
+void block_reduce_kernel(InputIterator  input,
+                         const size_t   size,
+                         OutputIterator output,
+                         InitValueType  initial_value,
+                         BinaryFunction reduce_op)
+{
+    block_reduce_kernel_impl<WithInitialValue, Config, ResultType>(input,
+                                                                   size,
+                                                                   output,
+                                                                   initial_value,
+                                                                   reduce_op);
+}
+
 #define ROCPRIM_DETAIL_HIP_SYNC(name, size, start) \
     if(debug_synchronous) \
     { \
@@ -120,7 +142,7 @@ hipError_t reduce_impl(void * temporary_storage,
     const auto         items_per_block  = block_size * items_per_thread;
 
     const size_t number_of_blocks  = detail::ceiling_div(size, items_per_block);
-    const size_t block_prefix_size = size <= items_per_block ? 0 : number_of_blocks;
+    const size_t block_prefix_size = number_of_blocks;
 
     // Pointer to array with block_prefixes
     result_type* block_prefixes{};
@@ -146,7 +168,6 @@ hipError_t reduce_impl(void * temporary_storage,
     }
 
     unsigned int* block_complete = nullptr;
-    result_type*   block_tmp      = nullptr;
 
     const hipError_t partition_result = detail::temp_storage::partition(
         temporary_storage,
@@ -154,9 +175,6 @@ hipError_t reduce_impl(void * temporary_storage,
         detail::temp_storage::make_linear_partition(
             detail::temp_storage::ptr_aligned_array(&block_prefixes, block_prefix_size),
             detail::temp_storage::ptr_aligned_array(&block_complete, 1),
-            detail::temp_storage::ptr_aligned_array(
-                &block_tmp,
-                number_of_blocks > items_per_block ? 0 : number_of_blocks),
             detail::temp_storage::make_partition(&nested_temp_storage,
                                                  nested_temp_storage_size,
                                                  alignof(result_type))));
@@ -179,7 +197,7 @@ hipError_t reduce_impl(void * temporary_storage,
         std::cout << "items_per_block " << items_per_block << '\n';
     }
 
-    if (size <= 0)
+    if (size == 0)
     {
         output[0] = static_cast<result_type>(initial_value);
         return hipSuccess;
@@ -204,7 +222,7 @@ hipError_t reduce_impl(void * temporary_storage,
                     current_size,
                     block_prefixes + i * number_of_blocks_limit,
                     initial_value,
-                    reduce_op, block_complete, block_tmp);
+                    reduce_op);
             ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("block_reduce_kernel", current_size, start);
         }
 
@@ -237,7 +255,7 @@ hipError_t reduce_impl(void * temporary_storage,
                                                        size,
                                                        output,
                                                        initial_value,
-                                                       reduce_op, block_complete, block_tmp);
+                                                       reduce_op, block_complete, block_prefixes);
         ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("block_reduce_kernel", size, start);
     }
 

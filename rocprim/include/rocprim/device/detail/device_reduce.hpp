@@ -148,15 +148,73 @@ void block_reduce_kernel_impl(InputIterator input,
 
     using result_type = ResultType;
 
-    // using warp_reduce_type
-    //     = warp_reduce_crosslane<result_type, device_warp_size(), false>;
+    constexpr unsigned int items_per_block = block_size * items_per_thread;
+
+    const unsigned int number_of_blocks = ::rocprim::detail::grid_size<0>();
+    const unsigned int flat_id          = ::rocprim::detail::block_thread_id<0>();
+    const unsigned int flat_block_id    = ::rocprim::detail::block_id<0>();
+    const bool         is_last_block    = flat_block_id + 1 == number_of_blocks;
+
+    result_type output_value;
+
+    load_block_reduce<Config>(input, output_value, input_size, reduce_op, flat_block_id);
+
+    if(flat_id == 0)
+    {
+        block_tmp[flat_block_id] = output_value;
+        detail::memory_fence_device();
+        atomic_add(block_complete, 1);
+    }
+    __syncthreads();
+
+    if(is_last_block)
+    {
+        unsigned int amt = atomic_load(block_complete);
+        while(amt != number_of_blocks)
+        {
+            amt = atomic_load(block_complete);
+        }
+        detail::memory_fence_device();
+
+        load_block_reduce<Config>(block_tmp, output_value, number_of_blocks, reduce_op, 0);
+
+        if(flat_id == 0)
+        {
+            output[0]
+                = reduce_with_initial<WithInitialValue>(output_value,
+                                                        static_cast<result_type>(initial_value),
+                                                        reduce_op);
+        }
+    }
+}
+
+template<
+    bool WithInitialValue,
+    class Config,
+    class ResultType,
+    class InputIterator,
+    class OutputIterator,
+    class InitValueType,
+    class BinaryFunction
+>
+ROCPRIM_DEVICE ROCPRIM_FORCE_INLINE
+void block_reduce_kernel_impl(InputIterator input,
+                              const size_t input_size,
+                              OutputIterator output,
+                              InitValueType initial_value,
+                              BinaryFunction reduce_op)
+{
+    static constexpr reduce_config_params params = device_params<Config>();
+
+    constexpr unsigned int block_size       = params.reduce_config.block_size;
+    constexpr unsigned int items_per_thread = params.reduce_config.items_per_thread;
+
+    using result_type = ResultType;
 
     constexpr unsigned int items_per_block = block_size * items_per_thread;
 
     const unsigned int number_of_blocks    = ::rocprim::detail::grid_size<0>();
     const unsigned int flat_id             = ::rocprim::detail::block_thread_id<0>();
-    // const unsigned int warp_id             = ::rocprim::warp_id();
-    // const unsigned int lane_id             = ::rocprim::lane_id();
     const unsigned int flat_block_id       = ::rocprim::detail::block_id<0>();
     const bool         is_last_block       = flat_block_id + 1 == number_of_blocks;
 
@@ -165,52 +223,13 @@ void block_reduce_kernel_impl(InputIterator input,
     
     load_block_reduce<Config>(input, output_value, input_size, reduce_op, flat_block_id);
 
-    if(number_of_blocks > items_per_block)
+    // Save value into output
+    if(flat_id == 0)
     {
-        // Save value into output
-        if(flat_id == 0)
-        {
-            output[flat_block_id]
-                = reduce_with_initial<WithInitialValue>(output_value,
-                                                        static_cast<result_type>(initial_value),
-                                                        reduce_op);
-        }
-    }
-    else
-    {
-        if(flat_id == 0)
-        {
-            block_tmp[flat_block_id] = output_value;
-            detail::memory_fence_device();
-            atomic_add(block_complete, 1);
-        }
-        __syncthreads();
-
-        if(is_last_block)
-        {
-
-            unsigned int amt = atomic_load(block_complete);
-            while(amt != number_of_blocks)
-            {
-                amt = atomic_load(block_complete);
-            }
-            detail::memory_fence_device();
-
-            load_block_reduce<Config>(block_tmp, output_value, number_of_blocks, reduce_op, 0);
-
-            // for (unsigned i = lane_id; i < number_of_blocks; i += device_warp_size()) {
-            //     auto value = block_tmp[i];
-            //     warp_reduce_type().reduce(value, reduction, reduce_op);
-            // }
-
-            if(flat_id == 0)
-            {
-                output[0] = reduce_with_initial<WithInitialValue>(
-                                                        output_value,
-                                                        static_cast<result_type>(initial_value),
-                                                        reduce_op);
-            }
-        }
+        output[flat_block_id]
+            = reduce_with_initial<WithInitialValue>(output_value,
+                                                    static_cast<result_type>(initial_value),
+                                                    reduce_op);
     }
 }
 } // namespace detail
