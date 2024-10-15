@@ -29,6 +29,7 @@
 #include <benchmark/benchmark.h>
 
 // HIP API
+#include <cstdlib>
 #include <hip/hip_runtime.h>
 
 // rocPRIM HIP API
@@ -39,6 +40,8 @@
 #include <vector>
 
 #include <cstddef>
+
+const size_t MINIMUM_BENCHMARK_DATA = 1024*1024*500;
 
 constexpr const char* get_reduce_method_name(rocprim::block_reduce_algorithm alg)
 {
@@ -89,22 +92,27 @@ struct device_reduce_benchmark : public config_autotune_interface
              const managed_seed& seed,
              hipStream_t         stream) const override
     {
-        // Calculate the number of elements 
+        // Calculate the number of elements
+        size_t used_allocation = bytes < MINIMUM_BENCHMARK_DATA ? MINIMUM_BENCHMARK_DATA : bytes;
+        size_t allocated_num_elements=used_allocation/sizeof(T);
+
         size_t size = bytes / sizeof(T);
+
+        size_t useful_starting_ranges=allocated_num_elements/size;
 
         BinaryFunction reduce_op{};
         const auto     random_range = limit_random_range<T>(0, 1000);
         std::vector<T> input
-            = get_random_data<T>(size, random_range.first, random_range.second, seed.get_0());
+            = get_random_data<T>(allocated_num_elements, random_range.first, random_range.second, seed.get_0());
 
         T * d_input;
         T * d_output;
-        HIP_CHECK(hipMalloc(reinterpret_cast<void**>(&d_input), size * sizeof(T)));
+        HIP_CHECK(hipMalloc(reinterpret_cast<void**>(&d_input), allocated_num_elements * sizeof(T)));
         HIP_CHECK(hipMalloc(reinterpret_cast<void**>(&d_output), sizeof(T)));
         HIP_CHECK(
             hipMemcpy(
                 d_input, input.data(),
-                size * sizeof(T),
+                allocated_num_elements * sizeof(T),
                 hipMemcpyHostToDevice
                 )
         );
@@ -117,7 +125,7 @@ struct device_reduce_benchmark : public config_autotune_interface
         HIP_CHECK(
             rocprim::reduce<Config>(
                 d_temp_storage, temp_storage_size_bytes,
-                d_input, d_output, T(), size,
+                &d_input[rand()%useful_starting_ranges], d_output, T(), size,
                 reduce_op, stream
                 )
         );
@@ -130,7 +138,7 @@ struct device_reduce_benchmark : public config_autotune_interface
             HIP_CHECK(
                 rocprim::reduce<Config>(
                     d_temp_storage, temp_storage_size_bytes,
-                    d_input, d_output, T(), size,
+                    &d_input[rand()%useful_starting_ranges], d_output, T(), size,
                     reduce_op, stream
                     )
             );
