@@ -41,10 +41,21 @@ namespace tensorflow
 {
 namespace functor
 {
+
+#ifndef TENSORFLOW_CORE_KERNELS_SEGMENT_REDUCTION_OPS_H_
+
+#define ROCPRIM_TENSORFLOW_SUM_CHECK_EXPRESSION std::is_same<BinaryFunction,::tensorflow::functor::Sum<float>>::value
 template<typename T>
 struct Sum;
+#else
+#define ROCPRIM_TENSORFLOW_SUM_CHECK_EXPRESSION std::is_same<BinaryFunction,::tensorflow::functor::Sum>::value
+struct Sum;
+#endif
 }
 }
+
+
+
 
 BEGIN_ROCPRIM_NAMESPACE
 
@@ -105,8 +116,7 @@ template <bool WithInitialValue, class Config, class ResultType,
           class InputIterator, class OutputIterator, class InitValueType,
           class BinaryFunction, class OutputType,
           std::enable_if_t<
-              !((std::is_same<BinaryFunction,
-                            ::tensorflow::functor::Sum<float>>::value ||
+              !((ROCPRIM_TENSORFLOW_SUM_CHECK_EXPRESSION ||
                std::is_same<BinaryFunction, ::rocprim::plus<float>>::value) &&
               (std::is_same<float, ResultType>::value)), bool> = false>
 hipError_t block_reduce_kernel_full_nonbitwise_reproducable_int_float_launcher(
@@ -129,8 +139,7 @@ template <bool WithInitialValue, class Config, class ResultType,
           class InputIterator, class OutputIterator, class InitValueType,
           class BinaryFunction, class OutputType,
           std::enable_if_t<
-              (std::is_same<BinaryFunction,
-                            ::tensorflow::functor::Sum<float>>::value ||
+              (ROCPRIM_TENSORFLOW_SUM_CHECK_EXPRESSION ||
                std::is_same<BinaryFunction, ::rocprim::plus<float>>::value) &&
               (std::is_same<float, ResultType>::value), bool>  = true>
 hipError_t block_reduce_kernel_full_nonbitwise_reproducable_int_float_launcher(
@@ -329,8 +338,7 @@ hipError_t reduce_impl(void * temporary_storage,
         if (debug_synchronous) {
             start = std::chrono::steady_clock::now();
         }
-        if ((std::is_same<BinaryFunction,
-                         ::tensorflow::functor::Sum<float>>::value ||
+        if ((ROCPRIM_TENSORFLOW_SUM_CHECK_EXPRESSION ||
             std::is_same<BinaryFunction, ::rocprim::plus<float>>::value)
             &&(std::is_same<float, result_type>::value))
                {
@@ -360,6 +368,7 @@ hipError_t reduce_impl(void * temporary_storage,
 
 
 #undef ROCPRIM_DETAIL_HIP_SYNC
+#undef ROCPRIM_TENSORFLOW_SUM_CHECK_EXPRESSION
 
 } // end of detail namespace
 
