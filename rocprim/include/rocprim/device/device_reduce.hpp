@@ -277,20 +277,16 @@ hipError_t reduce_impl(void * temporary_storage,
         ROCPRIM_DETAIL_HIP_SYNC("nested_device_reduce", number_of_blocks, start);
     } else {
 
-        // RETURN_ON_ERROR(hipMemsetAsync(block_complete, 0, sizeof(unsigned
-        // int), stream));
-        RETURN_ON_ERROR(
-            hipMemsetAsync(output, 0, sizeof(unsigned int), stream));
-
         if (debug_synchronous) {
             start = std::chrono::steady_clock::now();
         }
         if ((std::is_same<BinaryFunction,
                          ::tensorflow::functor::Sum<float>>::value ||
             std::is_same<BinaryFunction, ::rocprim::plus<float>>::value)
-            &&(std::is_same<float, result_type>::value ||
-               std::is_same<int, result_type>::value ||
-               std::is_same<unsigned int, result_type>::value)) {
+            &&(std::is_same<float, result_type>::value))
+               {
+            RETURN_ON_ERROR(
+            hipMemsetAsync(output, 0, sizeof(unsigned int), stream));
                 detail::
                     block_reduce_kernel_full_nonbitwise_reproducable_int_float<
                         WithInitialValue, config, result_type>
@@ -299,6 +295,8 @@ hipError_t reduce_impl(void * temporary_storage,
                         block_complete, block_prefixes);
             }
         else {
+            RETURN_ON_ERROR(hipMemsetAsync(block_complete, 0, sizeof(unsigned
+            int), stream));
             detail::block_reduce_kernel_full<WithInitialValue, config,
                                              result_type>
                 <<<dim3(number_of_blocks), dim3(block_size), 0, stream>>>(
