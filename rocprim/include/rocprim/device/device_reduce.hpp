@@ -41,7 +41,6 @@ namespace tensorflow
 {
 namespace functor
 {
-template<typename T>
 struct Sum;
 }
 }
@@ -106,9 +105,9 @@ template <bool WithInitialValue, class Config, class ResultType,
           class BinaryFunction, class OutputType,
           std::enable_if_t<
               !((std::is_same<BinaryFunction,
-                            ::tensorflow::functor::Sum<float>>::value ||
+                            ::tensorflow::functor::Sum>::value ||
                std::is_same<BinaryFunction, ::rocprim::plus<float>>::value) &&
-              (std::is_same<float, ResultType>::value)), bool> = false>
+              (std::is_same<float, ResultType>::value)), bool> = true>
 hipError_t block_reduce_kernel_full_nonbitwise_reproducable_int_float_launcher(
                          size_t number_of_blocks,
                          size_t block_size,
@@ -130,7 +129,7 @@ template <bool WithInitialValue, class Config, class ResultType,
           class BinaryFunction, class OutputType,
           std::enable_if_t<
               (std::is_same<BinaryFunction,
-                            ::tensorflow::functor::Sum<float>>::value ||
+                            ::tensorflow::functor::Sum>::value ||
                std::is_same<BinaryFunction, ::rocprim::plus<float>>::value) &&
               (std::is_same<float, ResultType>::value), bool>  = true>
 hipError_t block_reduce_kernel_full_nonbitwise_reproducable_int_float_launcher(
@@ -330,7 +329,7 @@ hipError_t reduce_impl(void * temporary_storage,
             start = std::chrono::steady_clock::now();
         }
         if ((std::is_same<BinaryFunction,
-                         ::tensorflow::functor::Sum<float>>::value ||
+                         ::tensorflow::functor::Sum>::value ||
             std::is_same<BinaryFunction, ::rocprim::plus<float>>::value)
             &&(std::is_same<float, result_type>::value))
                {
