@@ -42,7 +42,7 @@ namespace tensorflow
 namespace functor
 {
 
-#ifndef TENSORFLOW_CORE_KERNELS_SEGMENT_REDUCTION_OPS_H_
+#if !defined(TENSORFLOW_CORE_KERNELS_SEGMENT_REDUCTION_OPS_H_) && !defined(TENSORFLOW_CORE_KERNELS_SEGMENT_REDUCTION_OPS_GPU_CU_H_)
 
 #define ROCPRIM_TENSORFLOW_SUM_CHECK_EXPRESSION std::is_same<BinaryFunction,::tensorflow::functor::Sum<float>>::value
 template<typename T>
