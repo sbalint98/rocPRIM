@@ -37,6 +37,15 @@
 #include "detail/device_reduce.hpp"
 #include "device_reduce_config.hpp"
 
+namespace tensorflow
+{
+namespace functor
+{
+template<typename T>
+struct Sum;
+}
+}
+
 BEGIN_ROCPRIM_NAMESPACE
 
 /// \addtogroup devicemodule
@@ -55,7 +64,7 @@ template<bool WithInitialValue,
          class OutputType>
 ROCPRIM_KERNEL
     __launch_bounds__(device_params<Config>().reduce_config.block_size)
-void block_reduce_kernel(InputIterator  input,
+void block_reduce_kernel_full(InputIterator  input,
                          const size_t   size,
                          OutputIterator output,
                          InitValueType  initial_value,
@@ -63,7 +72,33 @@ void block_reduce_kernel(InputIterator  input,
                          unsigned int* block_complete,
                          OutputType*    block_tmp)
 {
-    block_reduce_kernel_impl<WithInitialValue, Config, ResultType>(input,
+    block_reduce_kernel_full_impl<WithInitialValue, Config, ResultType>(input,
+                                                                   size,
+                                                                   output,
+                                                                   initial_value,
+                                                                   reduce_op,
+                                                                   block_complete, block_tmp);
+}
+
+template<bool WithInitialValue,
+         class Config,
+         class ResultType,
+         class InputIterator,
+         class OutputIterator,
+         class InitValueType,
+         class BinaryFunction,
+         class OutputType>
+ROCPRIM_KERNEL
+    __launch_bounds__(device_params<Config>().reduce_config.block_size)
+void block_reduce_kernel_full_nonbitwise_reproducable_int_float(InputIterator  input,
+                         const size_t   size,
+                         OutputIterator output,
+                         InitValueType  initial_value,
+                         BinaryFunction reduce_op,
+                         unsigned int* block_complete,
+                         OutputType*    block_tmp)
+{
+    block_reduce_kernel_full_nonbitwise_reproducable_int_float_impl<WithInitialValue, Config, ResultType>(input,
                                                                    size,
                                                                    output,
                                                                    initial_value,
@@ -80,13 +115,13 @@ template<bool WithInitialValue,
          class BinaryFunction>
 ROCPRIM_KERNEL
     __launch_bounds__(device_params<Config>().reduce_config.block_size)
-void block_reduce_kernel(InputIterator  input,
+void block_reduce_kernel_partial(InputIterator  input,
                          const size_t   size,
                          OutputIterator output,
                          InitValueType  initial_value,
                          BinaryFunction reduce_op)
 {
-    block_reduce_kernel_impl<WithInitialValue, Config, ResultType>(input,
+    block_reduce_kernel_partial_impl<WithInitialValue, Config, ResultType>(input,
                                                                    size,
                                                                    output,
                                                                    initial_value,
@@ -216,7 +251,7 @@ hipError_t reduce_impl(void * temporary_storage,
             {
                 start = std::chrono::steady_clock::now();
             }
-            detail::block_reduce_kernel<false, config, result_type>
+            detail::block_reduce_kernel_partial<false, config, result_type>
                 <<<dim3(current_blocks), dim3(block_size), 0, stream>>>(
                     input + offset,
                     current_size,
@@ -240,24 +275,39 @@ hipError_t reduce_impl(void * temporary_storage,
                                                               stream,
                                                               debug_synchronous));
         ROCPRIM_DETAIL_HIP_SYNC("nested_device_reduce", number_of_blocks, start);
-    }
-    else
-    {
+    } else {
 
-        // RETURN_ON_ERROR(hipMemsetAsync(block_complete, 0, sizeof(unsigned int), stream));
-        RETURN_ON_ERROR(hipMemsetAsync(output, 0, sizeof(unsigned int), stream));
+        // RETURN_ON_ERROR(hipMemsetAsync(block_complete, 0, sizeof(unsigned
+        // int), stream));
+        RETURN_ON_ERROR(
+            hipMemsetAsync(output, 0, sizeof(unsigned int), stream));
 
-        if(debug_synchronous)
-        {
+        if (debug_synchronous) {
             start = std::chrono::steady_clock::now();
         }
-        detail::block_reduce_kernel<WithInitialValue, config, result_type>
-            <<<dim3(number_of_blocks), dim3(block_size), 0, stream>>>(input,
-                                                       size,
-                                                       output,
-                                                       initial_value,
-                                                       reduce_op, block_complete, block_prefixes);
-        ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("block_reduce_kernel", size, start);
+        if ((std::is_same<BinaryFunction,
+                         ::tensorflow::functor::Sum<float>>::value ||
+            std::is_same<BinaryFunction, ::rocprim::plus<float>>::value)
+            &&(std::is_same<float, result_type>::value ||
+               std::is_same<int, result_type>::value ||
+               std::is_same<unsigned int, result_type>::value)) {
+                detail::
+                    block_reduce_kernel_full_nonbitwise_reproducable_int_float<
+                        WithInitialValue, config, result_type>
+                    <<<dim3(number_of_blocks), dim3(block_size), 0, stream>>>(
+                        input, size, output, initial_value, reduce_op,
+                        block_complete, block_prefixes);
+            }
+        else {
+            detail::block_reduce_kernel_full<WithInitialValue, config,
+                                             result_type>
+                <<<dim3(number_of_blocks), dim3(block_size), 0, stream>>>(
+                    input, size, output, initial_value, reduce_op,
+                    block_complete, block_prefixes);
+        }
+
+        ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR("block_reduce_kernel", size,
+                                                    start);
     }
 
     return hipSuccess;
