@@ -37,13 +37,13 @@
 #include "detail/device_reduce.hpp"
 #include "device_reduce_config.hpp"
 
-namespace tensorflow
-{
-namespace functor
-{
-struct Sum;
-}
-}
+// namespace tensorflow
+// {
+// namespace functor
+// {
+// struct Sum;
+// }
+// }
 
 BEGIN_ROCPRIM_NAMESPACE
 
