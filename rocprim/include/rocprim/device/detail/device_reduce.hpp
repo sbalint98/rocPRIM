@@ -133,13 +133,13 @@ template<
     class OutputType
 >
 ROCPRIM_DEVICE ROCPRIM_FORCE_INLINE
-void block_reduce_kernel_impl(InputIterator input,
+auto block_reduce_kernel_impl(InputIterator input,
                               const size_t input_size,
                               OutputIterator output,
                               InitValueType initial_value,
                               BinaryFunction reduce_op,
                               unsigned int* block_complete,
-                              OutputType* block_tmp)
+                              OutputType* block_tmp) -> std::enable_if_t<std::is_same<float, ResultType>::value || std::is_same<int, ResultType>::value || std::is_same<unsigned int, ResultType>::value>
 {
     static constexpr reduce_config_params params = device_params<Config>();
 
@@ -159,33 +159,37 @@ void block_reduce_kernel_impl(InputIterator input,
 
     load_block_reduce<Config>(input, output_value, input_size, reduce_op, flat_block_id);
 
-    if(flat_id == 0)
-    {
-        block_tmp[flat_block_id] = output_value;
-        detail::memory_fence_device();
-        atomic_add(block_complete, 1);
+    // if(flat_id == 0)
+    // {
+    //     block_tmp[flat_block_id] = output_value;
+    //     detail::memory_fence_device();
+    //     atomic_add(block_complete, 1);
+    // }
+    // __syncthreads();
+    if(flat_id == 0) {
+        // printf("output: %i output_value %i\n", output, output_value);
+        atomic_add(output,output_value);
     }
-    __syncthreads();
 
-    if(is_last_block)
-    {
-        unsigned int amt = atomic_load(block_complete);
-        while(amt != number_of_blocks)
-        {
-            amt = atomic_load(block_complete);
-        }
-        detail::memory_fence_device();
+    // if(is_last_block)
+    // {
+    //     unsigned int amt = atomic_load(block_complete);
+    //     while(amt != number_of_blocks)
+    //     {
+    //         amt = atomic_load(block_complete);
+    //     }
+    //     detail::memory_fence_device();
 
-        load_block_reduce<Config>(block_tmp, output_value, number_of_blocks, reduce_op, 0);
+    //     load_block_reduce<Config>(block_tmp, output_value, number_of_blocks, reduce_op, 0);
 
-        if(flat_id == 0)
-        {
-            output[0]
-                = reduce_with_initial<WithInitialValue>(output_value,
-                                                        static_cast<result_type>(initial_value),
-                                                        reduce_op);
-        }
-    }
+    //     if(flat_id == 0)
+    //     {
+    //         output[0]
+    //             = reduce_with_initial<WithInitialValue>(output_value,
+    //                                                     static_cast<result_type>(initial_value),
+    //                                                     reduce_op);
+    //     }
+    // }
 }
 
 template<

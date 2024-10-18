@@ -244,7 +244,8 @@ hipError_t reduce_impl(void * temporary_storage,
     else
     {
 
-        RETURN_ON_ERROR(hipMemsetAsync(block_complete, 0, sizeof(unsigned int), stream));
+        // RETURN_ON_ERROR(hipMemsetAsync(block_complete, 0, sizeof(unsigned int), stream));
+        RETURN_ON_ERROR(hipMemsetAsync(output, 0, sizeof(unsigned int), stream));
 
         if(debug_synchronous)
         {
