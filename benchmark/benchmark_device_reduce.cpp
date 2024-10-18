@@ -100,17 +100,17 @@ int main(int argc, char *argv[])
     using custom_double2 = custom_type<double, double>;
 
     CREATE_BENCHMARK(int, rocprim::plus<int>)
-    // CREATE_BENCHMARK(long long, rocprim::plus<long long>)
+    CREATE_BENCHMARK(long long, rocprim::plus<long long>)
 
     CREATE_BENCHMARK(float, rocprim::plus<float>)
-    // CREATE_BENCHMARK(double, rocprim::plus<double>)
+    CREATE_BENCHMARK(double, rocprim::plus<double>)
 
-    // CREATE_BENCHMARK(int8_t, rocprim::plus<int8_t>)
-    // CREATE_BENCHMARK(uint8_t, rocprim::plus<uint8_t>)
-    // CREATE_BENCHMARK(rocprim::half, rocprim::plus<rocprim::half>)
+    CREATE_BENCHMARK(int8_t, rocprim::plus<int8_t>)
+    CREATE_BENCHMARK(uint8_t, rocprim::plus<uint8_t>)
+    CREATE_BENCHMARK(rocprim::half, rocprim::plus<rocprim::half>)
 
-    // CREATE_BENCHMARK(custom_float2, rocprim::plus<custom_float2>)
-    // CREATE_BENCHMARK(custom_double2, rocprim::plus<custom_double2>)
+    CREATE_BENCHMARK(custom_float2, rocprim::plus<custom_float2>)
+    CREATE_BENCHMARK(custom_double2, rocprim::plus<custom_double2>)
 #endif
 
     // Use manual timing
