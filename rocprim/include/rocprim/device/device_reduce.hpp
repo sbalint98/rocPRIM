@@ -79,15 +79,9 @@ void block_reduce_kernel_full(InputIterator  input,
                                                                    reduce_op,
                                                                    block_complete, block_tmp);
 }
-
-template<bool WithInitialValue,
-         class Config,
-         class ResultType,
-         class InputIterator,
-         class OutputIterator,
-         class InitValueType,
-         class BinaryFunction,
-         class OutputType>
+template <bool WithInitialValue, class Config, class ResultType,
+          class InputIterator, class OutputIterator, class InitValueType,
+          class BinaryFunction, class OutputType>
 ROCPRIM_KERNEL
     __launch_bounds__(device_params<Config>().reduce_config.block_size)
 void block_reduce_kernel_full_nonbitwise_reproducable_int_float(InputIterator  input,
@@ -104,6 +98,59 @@ void block_reduce_kernel_full_nonbitwise_reproducable_int_float(InputIterator  i
                                                                    initial_value,
                                                                    reduce_op,
                                                                    block_complete, block_tmp);
+}
+
+
+template <bool WithInitialValue, class Config, class ResultType,
+          class InputIterator, class OutputIterator, class InitValueType,
+          class BinaryFunction, class OutputType,
+          std::enable_if_t<
+              !((std::is_same<BinaryFunction,
+                            ::tensorflow::functor::Sum<float>>::value ||
+               std::is_same<BinaryFunction, ::rocprim::plus<float>>::value) &&
+              (std::is_same<float, ResultType>::value)), bool> = false>
+hipError_t block_reduce_kernel_full_nonbitwise_reproducable_int_float_launcher(
+                         size_t number_of_blocks,
+                         size_t block_size,
+                         hipStream_t stream,
+                         InputIterator  input,
+                         const size_t   size,
+                         OutputIterator output,
+                         InitValueType  initial_value,
+                         BinaryFunction reduce_op,
+                         unsigned int* block_complete,
+                         OutputType*    block_tmp)
+{
+    return hipErrorIllegalState;
+}
+
+
+template <bool WithInitialValue, class Config, class ResultType,
+          class InputIterator, class OutputIterator, class InitValueType,
+          class BinaryFunction, class OutputType,
+          std::enable_if_t<
+              (std::is_same<BinaryFunction,
+                            ::tensorflow::functor::Sum<float>>::value ||
+               std::is_same<BinaryFunction, ::rocprim::plus<float>>::value) &&
+              (std::is_same<float, ResultType>::value), bool>  = true>
+hipError_t block_reduce_kernel_full_nonbitwise_reproducable_int_float_launcher(
+                         size_t number_of_blocks,
+                         size_t block_size,
+                         hipStream_t stream,
+                         InputIterator  input,
+                         const size_t   size,
+                         OutputIterator output,
+                         InitValueType  initial_value,
+                         BinaryFunction reduce_op,
+                         unsigned int* block_complete,
+                         OutputType*    block_tmp)
+{
+    RETURN_ON_ERROR(hipMemsetAsync(output, 0, sizeof(unsigned int), stream));
+    block_reduce_kernel_full_nonbitwise_reproducable_int_float<WithInitialValue, Config, ResultType>
+            <<<dim3(number_of_blocks), dim3(block_size), 0, stream>>>(
+                input, size, output, initial_value, reduce_op,
+                block_complete, block_tmp);
+    return hipSuccess;
 }
 
 template<bool WithInitialValue,
@@ -138,6 +185,8 @@ void block_reduce_kernel_partial(InputIterator  input,
         auto _d = std::chrono::duration_cast<std::chrono::duration<double>>(_end - start); \
         std::cout << " " << _d.count() * 1000 << " ms" << '\n'; \
     }
+
+
 
 template<
     bool WithInitialValue, // true when inital_value should be used in reduction
@@ -285,14 +334,12 @@ hipError_t reduce_impl(void * temporary_storage,
             std::is_same<BinaryFunction, ::rocprim::plus<float>>::value)
             &&(std::is_same<float, result_type>::value))
                {
+
             RETURN_ON_ERROR(
-            hipMemsetAsync(output, 0, sizeof(unsigned int), stream));
-                detail::
-                    block_reduce_kernel_full_nonbitwise_reproducable_int_float<
-                        WithInitialValue, config, result_type>
-                    <<<dim3(number_of_blocks), dim3(block_size), 0, stream>>>(
+                        block_reduce_kernel_full_nonbitwise_reproducable_int_float_launcher<WithInitialValue, config, result_type>
+                        (number_of_blocks, block_size, stream,
                         input, size, output, initial_value, reduce_op,
-                        block_complete, block_prefixes);
+                        block_complete, block_prefixes));
             }
         else {
             RETURN_ON_ERROR(hipMemsetAsync(block_complete, 0, sizeof(unsigned
